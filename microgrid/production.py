@@ -18,13 +18,13 @@ class Prosumer(Production):
         self.pv = pv
 
     def produce(self, time: int) -> float:
-        pass
+        return self.pv.production[time] if time in range(len(self.pv.production)) else 0
 
 
 class Consumer(Production):
 
     def produce(self, time: int) -> float:
-        pass
+        return 0
 
 
 @dataclass

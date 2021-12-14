@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import List
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -26,19 +27,21 @@ class BatteryStorage(Storage):
 
     def __init__(self, battery: Battery):
         self.battery = battery
-        self._history = []
+        self._history: List[float] = []
 
     def charge(self, amount: float) -> None:
-        pass
+        self._history.append(self.battery.soc)
+        self.battery.soc += amount
 
     def discharge(self, amount: float) -> None:
-        pass
+        self._history.append(self.battery.soc)
+        self.battery.soc -= amount
 
     def is_full(self) -> bool:
-        pass
+        return self.battery.soc >= self.battery.max_soc
 
     def free_space(self) -> float:
-        pass
+        return max(0.0, self.battery.soc - self.battery.min_soc) * self.battery.capacity
 
 
 class NoStorage(Storage):
@@ -50,10 +53,10 @@ class NoStorage(Storage):
         pass
 
     def is_full(self) -> bool:
-        pass
+        return True
 
     def free_space(self) -> float:
-        pass
+        return 0
 
 
 @dataclass
