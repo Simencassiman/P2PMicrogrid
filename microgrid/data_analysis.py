@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
 
-    with open('data.json') as file:
+    with open('data/data.json') as file:
         data = json.load(file)
 
         time = [datetime.fromisoformat(date) for date in data['time']]
