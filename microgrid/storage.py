@@ -1,10 +1,29 @@
 from __future__ import annotations
-from typing import List
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import numpy as np
 
 
 class Storage(ABC):
+
+    @property
+    @abstractmethod
+    def is_full(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def available_space(self) -> float:
+        ...
+
+    @property
+    @abstractmethod
+    def available_energy(self) -> float:
+        ...
+
+    @abstractmethod
+    def to_soc(self, energy: float) -> float:
+        ...
 
     @abstractmethod
     def charge(self, amount: float) -> None:
@@ -15,11 +34,7 @@ class Storage(ABC):
         ...
 
     @abstractmethod
-    def is_full(self) -> bool:
-        ...
-
-    @abstractmethod
-    def free_space(self) -> float:
+    def step(self) -> None:
         ...
 
 
@@ -27,36 +42,62 @@ class BatteryStorage(Storage):
 
     def __init__(self, battery: Battery):
         self.battery = battery
-        self._history: List[float] = []
+        self._time = 0
+        self._history = np.array([])
 
-    def charge(self, amount: float) -> None:
-        self._history.append(self.battery.soc)
-        self.battery.soc += amount
-
-    def discharge(self, amount: float) -> None:
-        self._history.append(self.battery.soc)
-        self.battery.soc -= amount
-
+    @property
     def is_full(self) -> bool:
         return self.battery.soc >= self.battery.max_soc
 
-    def free_space(self) -> float:
-        return max(0.0, self.battery.soc - self.battery.min_soc) * self.battery.capacity
+    @property
+    def available_space(self) -> float:
+        return (max(0.0, self.battery.soc - self.battery.min_soc) * self.battery.capacity /
+                np.sqrt(self.battery.efficiency))
+
+    @property
+    def available_energy(self) -> float:
+        return (max(0.0, self.battery.soc - self.battery.min_soc) * self.battery.capacity *
+               np.sqrt(self.battery.efficiency))
+
+    def to_soc(self, energy: float) -> float:
+        return energy / self.battery.capacity
+
+    def charge(self, amount: float) -> None:
+        self.battery.soc += np.sqrt(self.battery.efficiency) * amount
+
+    def discharge(self, amount: float) -> None:
+        self.battery.soc -= amount / np.sqrt(self.battery.efficiency)
+
+    def step(self) -> None:
+        np.append(self._history, self.battery.soc)
+        self._time += 1
 
 
 class NoStorage(Storage):
 
-    def charge(self, amount: float) -> None:
-        pass
-
-    def discharge(self, amount: float) -> None:
-        pass
-
+    @property
     def is_full(self) -> bool:
         return True
 
-    def free_space(self) -> float:
+    @property
+    def available_space(self) -> float:
         return 0
+
+    @property
+    def available_energy(self) -> float:
+        return 0
+
+    def to_soc(self, energy: float) -> float:
+        return 0
+
+    def charge(self, amount: float) -> None:
+        ...
+
+    def discharge(self, amount: float) -> None:
+        ...
+
+    def step(self) -> None:
+        ...
 
 
 @dataclass
@@ -64,7 +105,7 @@ class Battery:
 
     capacity: float
     peak_power: float
-    min_soc: int
-    max_soc: int
+    min_soc: float
+    max_soc: float
     efficiency: float
     soc: float
