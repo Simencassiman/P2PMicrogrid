@@ -15,9 +15,16 @@ from ev import EV
 
 class Agent(ABC):
 
+    __last_id = -1
+
     def __init__(self):
-        self.id: int
+        self.id = self.__last_id + 1
+        Agent.__last_id += 1
         self.time: int = 0
+
+    @classmethod
+    def reset_ids(cls) -> None:
+        cls.__last_id = -1
 
     @abstractmethod
     def take_decision(self, **kwargs) -> Tuple[float, float]:
@@ -88,17 +95,18 @@ class RuleAgent(ActingAgent):
 
     def _update_storage(self, balance: float) -> float:
 
+        energy = balance * 60 * TIME_SLOT
         if balance > 0 and self.storage.available_energy > 0:
             # If not enough production and battery is not empty
-            to_extract = min(balance, self.storage.available_energy)
+            to_extract = min(energy, self.storage.available_energy)
             self.storage.discharge(self.storage.to_soc(to_extract))
-            balance -= to_extract
+            balance -= to_extract / (60 * TIME_SLOT)
 
         elif balance < 0 and not self.storage.is_full:
             # If too much production and battery is not full
-            to_store = min(-balance, self.storage.available_space)
+            to_store = min(-energy, self.storage.available_space)
             self.storage.charge(self.storage.to_soc(to_store))
-            balance += to_store
+            balance += to_store / (60 * TIME_SLOT)
 
         return balance
 

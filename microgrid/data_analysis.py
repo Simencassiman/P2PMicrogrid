@@ -1,13 +1,124 @@
 # Python Libraries
+from typing import List
 import json
 from datetime import datetime
 from calendar import monthrange
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mc  # For the legend
+from matplotlib.cm import ScalarMappable    # For the legend
 
 # Local modules
+from config import TIME_SLOT
+from agent import ActingAgent
 
+
+def analyse_community_output(agents: List[ActingAgent], time: List[str], power: np.ndarray, cost: np.ndarray) -> None:
+
+    nr_agents = len(agents)
+    agent = agents[0]
+    agent_ids = [a.id for a in agents]
+    pv = np.array(agent.production.pv.production)
+    temperature = np.array(agent.heating._history)
+    battery = np.array(agent.storage._history)
+
+    production = np.array(list(map(lambda a: a.production.pv.production, filter(lambda a: a.id < 4, agents))))\
+                    .transpose()
+    self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
+
+    cost = cost.sum(axis=0)
+    fixed_cost = (0.25 * 0.2 * cost + 50 * np.maximum(2.5, power.max(axis=0) * 1e-3)) / 30
+    print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / 60 * 1e-3} kWh')
+    print(f'Cost a total of: {cost} € volume and {fixed_cost / 30}')
+
+    # Create plots
+    nr_ticks_factor = 16
+    time_ticks = np.arange(int(len(time) / nr_ticks_factor)) * nr_ticks_factor
+    time_labels = [datetime.fromisoformat(t).strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+
+    plt.figure(1)
+    plt.plot(time, power[:, 0] * 1e-3)
+    plt.plot(time, pv * 1e-3)
+    plt.xticks(time_ticks, time_labels)
+    plt.title("Agent profiles")
+    plt.xlabel("Time")
+    plt.ylabel("Power [kW]")
+    plt.legend(['Loads', 'PV'])
+
+    plt.figure(2)
+    width = 0.35  # the width of the bars: can also be len(x) sequence
+
+    plt.figure(2)
+    plt.bar(agent_ids, cost, width, label='Volume')
+    plt.bar(agent_ids, fixed_cost, width, bottom=cost, label='Capacity')
+    plt.title("Electricity costs")
+    plt.xlabel("Agent")
+    plt.ylabel("Cost [€]")
+    plt.legend()
+
+    plt.figure(3)
+    plt.plot(time, temperature)
+    plt.xticks(time_ticks, time_labels)
+    plt.title("Indoor temperature")
+    plt.xlabel("Time")
+    plt.ylabel("Temperature [°C]")
+
+    plt.figure(4)
+    plt.plot(time, battery * 100)
+    plt.xticks(time_ticks, time_labels)
+    plt.title("Battery SOC")
+    plt.xlabel("Time")
+    plt.ylabel("SOC [%]")
+
+    plt.figure(5)
+    plt.bar(agent_ids[:4], self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)
+    plt.title("Self consumption")
+    plt.xlabel("Agent")
+    plt.ylabel("%")
+
+    fig, ax = plt.subplots()
+    grid_power = power.sum(axis=1).reshape((-1, 96))
+    ygrid, xgrid = map(lambda s: np.arange(s + 1) + 1, grid_power.shape)
+    ax.pcolormesh(xgrid, ygrid, grid_power * 1e-3, cmap="magma")
+
+    ax.set_frame_on(False)  # remove all spines
+    ax.set_ylim(ygrid[-1], 1)
+    ax.yaxis.set_ticks(ygrid[:-1])
+    ax.yaxis.set_tick_params(length=0)
+
+    # Color bar
+    fig.subplots_adjust(bottom=0.25)
+    # Create a new axis to contain the color bar
+    # Values are:
+    # (x coordinate of left border,
+    #  y coordinate for bottom border,
+    #  width,
+    #  height)
+    cbar_ax = fig.add_axes([0.3, 0.10, 0.4, 0.025])
+
+    # Create a normalizer that goes from minimum to maximum temperature
+    norm = mc.Normalize(grid_power.min() * 1e-3, grid_power.max() * 1e-3)
+
+    # Create the colorbar and set it to horizontal
+    cb = fig.colorbar(
+        ScalarMappable(norm=norm, cmap="magma"),
+        cax=cbar_ax,  # Pass the new axis
+        orientation="horizontal"
+    )
+
+    # Remove tick marks
+    cb.ax.xaxis.set_tick_params(size=0)
+
+    # Add title and labels
+    fig.text(0.5, 0.18, "Time slot", ha="center", va="center", fontsize=14)
+    fig.text(0.07, 0.5, 'Day', ha="center", va="center", rotation="vertical", fontsize=14)
+    fig.suptitle("Grid load", fontsize=20, y=0.95)
+    # Set legend label
+    cb.set_label("Power [kW]", size=12)
+
+    # Show all figures
+    plt.show()
 
 def show_raw_load(path='data/data.json'):
     with open(path) as file:
@@ -35,7 +146,7 @@ def show_clean_load(path='data/data.json'):
         plt.show()
 
 def normalize_data():
-    with open('data/data.json') as in_file, open('data/profiles_1.json', 'w') as out_file:
+    with open('../data/data.json') as in_file, open('../data/profiles_1.json', 'w') as out_file:
         data = json.load(in_file)
 
         time = [date for t, date in enumerate(data['time']) if t % 15 == 0]
@@ -49,7 +160,7 @@ def normalize_data():
 
 def expand_irradiation() -> None:
 
-    with open('data/irradiance_tmp.json') as file, open('data/irradiation_daily.json', 'w') as out:
+    with open('../data/irradiance_tmp.json') as file, open('../data/irradiation_daily.json', 'w') as out:
         data = json.load(file)
         avg = []
         t = []
@@ -74,6 +185,15 @@ def expand_irradiation() -> None:
 if __name__ == "__main__":
     # normalize_data()
     # show_clean_load('data/profiles_1.json')
-    print('Nothing to do...')
+    with open('../data/profiles.json') as file:
+        data = json.load(file)
+
+        plt.plot(data['time'], data['loads'])
+        plt.plot(data['time'], data['pv'])
+        plt.plot(data['time'], data['temperature'])
+
+        plt.legend(["Load", "PV", "Temp"])
+        plt.show()
+    # print('Nothing to do...')
 
 

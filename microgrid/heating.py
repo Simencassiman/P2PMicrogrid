@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 # Local modules
 from config import TIME_SLOT
+from microgrid import environment
 
 
 """
@@ -91,8 +92,8 @@ class HPHeating(Heating):
 
     def get_temperature(self) -> Tuple[float, float]:
         # TODO: create environment
-        t_out = 0       # environment.get_temperature()
-        solar_rad = 0   # environment.get_irradiation()
+        t_out = environment.get_temperature(self._time)
+        solar_rad = environment.get_irradiation(self._time)
 
         dT_in = 1/Ci * (
             1/Ri * (self._t_building_mass - self._t_building_mass) +

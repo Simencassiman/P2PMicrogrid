@@ -8,12 +8,13 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # Local Modules
-from __init__ import environment
+from microgrid import environment
 from config import TIME_SLOT
-from agent import ActingAgent, GridAgent, RuleAgent
-from production import Prosumer, PV
-from storage import BatteryStorage, Battery
+from agent import Agent, ActingAgent, GridAgent, RuleAgent
+from production import Prosumer, Consumer, PV
+from storage import BatteryStorage, NoStorage, Battery
 from heating import HPHeating, HeatPump
+from data_analysis import analyse_community_output
 
 def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
@@ -22,41 +23,42 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
     temperature: npt.ArrayLike[float]
     cloud_cover: npt.ArrayLike[float]
     humidity: npt.ArrayLike[float]
-    irradiance: npt.ArrayLike[float]
+    # irradiance: npt.ArrayLike[float]
     production: npt.ArrayLike[float]
     agents: List[ActingAgent] = []
 
-    with open(f'data/profiles.json') as file:
+    with open(f'../data/profiles.json') as file:
         data = json.load(file)
 
         timeline = np.array([datetime.fromisoformat(date) for date in data['time']])
         load = np.array(data['loads'])
-        print(load[0])
+        production = np.array(data['pv'])
         temperature = np.array(data['temperature'])
         cloud_cover = np.array(data['cloud_cover'])
         humidity = np.array(data['humidity'])
-        irradiance = 1.7 * np.ones(temperature.shape)
+        # irradiance = 1.7 * np.ones(temperature.shape)
 
-    ratings = np.random.normal(0.7, 0.1, n_agents)
+    load_ratings = np.random.normal(0.7, 0.2, n_agents)
+    pv_ratings = np.random.normal(3, 0.2, n_agents)
 
+    Agent.reset_ids()
     for i in range(n_agents):
 
-        pv = np.zeros(temperature.shape)
-        max_pv = 0
-        max_power = 1
+        max_power = 1e3
         safety = 1e3
 
-        agents.append(RuleAgent(load * ratings[i] * 1e3,
-                                Prosumer(PV(peak_power=max_pv, production=pv)),
-                                BatteryStorage(Battery(capacity=7800, peak_power=5000, min_soc=0.2, max_soc=0.8,
-                                                       efficiency=0.9, soc=0.5)),
+        agents.append(RuleAgent(load * (load_ratings[i] if i < 3 else load_ratings[0]) * 1e3,
+                                Prosumer(PV(peak_power=pv_ratings[i] * 1e3,
+                                            production=production * pv_ratings[i] * 1e3)) if i < 4 else Consumer(),
+                                BatteryStorage(Battery(capacity=7800 * 3600, peak_power=5000, min_soc=0.2, max_soc=0.8,
+                                                       efficiency=0.9, soc=0.5)) if i < 3 else NoStorage(),
                                 HPHeating(HeatPump(cop=3.0, max_power=3000, power=0.0), 21.0),
                                 max_in=max_power + safety,
                                 max_out=-(max_power + safety)
                                 )
                       )
 
-    environment.setup(temperature, cloud_cover, humidity, irradiance)
+    environment.setup(temperature, cloud_cover, humidity)
 
     return CommunityMicrogrid(timeline, agents)
 
@@ -104,16 +106,14 @@ class CommunityMicrogrid:
 
 
 if __name__ == '__main__':
-    community = get_rule_based_community(2)
+    nr_agents = 5
+
+    with open('../data/profiles.json') as file:
+        time = json.load(file)['time']
+
+    community = get_rule_based_community(nr_agents)
 
     power, cost = community.run()
-    print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / 60 * 1e-3} kWh')
-    print(f'Cost a total of: {cost.sum(axis=0)} €')
-    print('Grid load')
-    print(power)
 
-    temp = community.agents[0].heating._history
-    t = [i for i in range(len(temp))]
+    analyse_community_output(community.agents, time, power, cost)
 
-    plt.plot(t, temp)
-    plt.show()

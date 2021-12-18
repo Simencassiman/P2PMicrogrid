@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import List
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import numpy as np
@@ -43,7 +44,7 @@ class BatteryStorage(Storage):
     def __init__(self, battery: Battery):
         self.battery = battery
         self._time = 0
-        self._history = np.array([])
+        self._history: List[float] = []
 
     @property
     def is_full(self) -> bool:
@@ -51,7 +52,7 @@ class BatteryStorage(Storage):
 
     @property
     def available_space(self) -> float:
-        return (max(0.0, self.battery.soc - self.battery.min_soc) * self.battery.capacity /
+        return (max(0.0, self.battery.max_soc - self.battery.soc) * self.battery.capacity /
                 np.sqrt(self.battery.efficiency))
 
     @property
@@ -69,7 +70,7 @@ class BatteryStorage(Storage):
         self.battery.soc -= amount / np.sqrt(self.battery.efficiency)
 
     def step(self) -> None:
-        np.append(self._history, self.battery.soc)
+        self._history.append(self.battery.soc)
         self._time += 1
 
 
