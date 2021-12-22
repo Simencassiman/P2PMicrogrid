@@ -5,15 +5,15 @@ import pandas as pd
 from datetime import datetime
 
 # Local modules
-from config import data_path, db_file
-from access_smarthor_data_api import get_data
+from config import DATA_PATH, DB_FILE
+import access_smarthor_data_api as api
 
 
-def get_connection(file=db_file) -> sqlite3.Connection:
+def get_connection(file=DB_FILE) -> sqlite3.Connection:
 
     conn = None
     try:
-        conn = sqlite3.connect(osp.join(data_path, file))
+        conn = sqlite3.connect(osp.join(DATA_PATH, file))
         return conn
     except Exception as e:
         print(e)
@@ -54,23 +54,42 @@ def insert_data_from_dict(cur: sqlite3.Cursor, df: pd.DataFrame) -> None:
     cur.executemany("INSERT INTO load VALUES (?,?,?,?)", load_records)
 
 
+def get_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.DataFrame:
+
+    query_env = """
+        SELECT * 
+        FROM environment 
+        WHERE date >= ? AND date < ?     
+    """
+
+    query_l = """
+        SELECT * 
+        FROM load 
+        WHERE date >= ? AND date < ?     
+    """
+
+    df_env = pd.read_sql_query(query_env, con, params=(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d')))
+    df_l = pd.read_sql_query(query_l, con, params=(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d')))
+
+    df = pd.merge(df_env, df_l, on=['date', 'time', 'utc'], copy=False)
+
+    return df
+
+
 if __name__ == '__main__':
 
-    start = datetime(2021, 5, 1)
-    end = datetime(2021, 12, 1)
+    start = datetime(2021, 10, 1)
+    end = datetime(2021, 11, 1)
 
     conn = get_connection()
 
     if conn is not None:
         cursor = conn.cursor()
 
-        df = pd.read_sql_query("""
-            SELECT * 
-            FROM environment 
-            WHERE date = '2021-11-01' AND time > '13:00:00'
-        """, conn)
+        df = get_data(conn, start, end)
 
         print(df.head())
+        print(df.tail())
 
     else:
         print('Could not connect to database')

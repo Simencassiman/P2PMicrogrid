@@ -10,16 +10,19 @@ import matplotlib.colors as mc  # For the legend
 from matplotlib.cm import ScalarMappable    # For the legend
 
 # Local modules
+from microgrid import MINUTES_PER_HOUR, HOURS_PER_DAY
 from config import TIME_SLOT
 from agent import ActingAgent
 
 
-def analyse_community_output(agents: List[ActingAgent], time: List[str], power: np.ndarray, cost: np.ndarray) -> None:
+def analyse_community_output(agents: List[ActingAgent], time: List[datetime], power: np.ndarray, cost: np.ndarray) -> None:
+
+    slots_per_day = int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY)
 
     nr_agents = len(agents)
     agent = agents[0]
     agent_ids = [a.id for a in agents]
-    pv = np.array(agent.production.pv.production)
+    pv: np.array = agent.production.pv.production
     temperature = np.array(agent.heating._history)
     battery = np.array(agent.storage._history)
 
@@ -28,18 +31,20 @@ def analyse_community_output(agents: List[ActingAgent], time: List[str], power: 
     self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
 
     cost = cost.sum(axis=0)
-    fixed_cost = (0.25 * 0.2 * cost + 50 * np.maximum(2.5, power.max(axis=0) * 1e-3)) / 30
-    print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / 60 * 1e-3} kWh')
-    print(f'Cost a total of: {cost} € volume and {fixed_cost / 30}')
+    fixed_cost = (0.25 * 0.2 * cost + 50 * np.maximum(2.5, power.max(axis=0) * 1e-3))
+    print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3} kWh')
+    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity')
 
     # Create plots
     nr_ticks_factor = 16
-    time_ticks = np.arange(int(len(time) / nr_ticks_factor)) * nr_ticks_factor
-    time_labels = [datetime.fromisoformat(t).strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    time = time[:slots_per_day]
+    time_ticks = np.arange(int(slots_per_day / nr_ticks_factor)) * nr_ticks_factor
+    time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    time = [t.isoformat() for t in time]
 
     plt.figure(1)
-    plt.plot(time, power[:, 0] * 1e-3)
-    plt.plot(time, pv * 1e-3)
+    plt.plot(time[:slots_per_day], power[:slots_per_day, 0] * 1e-3)
+    plt.plot(time[:slots_per_day], pv[:slots_per_day] * 1e-3)
     plt.xticks(time_ticks, time_labels)
     plt.title("Agent profiles")
     plt.xlabel("Time")
@@ -58,14 +63,14 @@ def analyse_community_output(agents: List[ActingAgent], time: List[str], power: 
     plt.legend()
 
     plt.figure(3)
-    plt.plot(time, temperature)
+    plt.plot(time[:slots_per_day], temperature[:slots_per_day])
     plt.xticks(time_ticks, time_labels)
     plt.title("Indoor temperature")
     plt.xlabel("Time")
     plt.ylabel("Temperature [°C]")
 
     plt.figure(4)
-    plt.plot(time, battery * 100)
+    plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
     plt.xticks(time_ticks, time_labels)
     plt.title("Battery SOC")
     plt.xlabel("Time")
@@ -120,6 +125,7 @@ def analyse_community_output(agents: List[ActingAgent], time: List[str], power: 
     # Show all figures
     plt.show()
 
+
 def show_raw_load(path='data/data.json'):
     with open(path) as file:
         data = json.load(file)
@@ -135,6 +141,7 @@ def show_raw_load(path='data/data.json'):
         plt.plot(t[1:], p)
         plt.show()
 
+
 def show_clean_load(path='data/data.json'):
     with open(path) as file:
         data = json.load(file)
@@ -144,6 +151,7 @@ def show_clean_load(path='data/data.json'):
 
         plt.plot(time, power)
         plt.show()
+
 
 def normalize_data():
     with open('../data/data.json') as in_file, open('../data/profiles_1.json', 'w') as out_file:
@@ -157,6 +165,7 @@ def normalize_data():
         p /= p.max()
 
         json.dump({'time': time[1:], 'values': p.tolist()}, out_file)
+
 
 def expand_irradiation() -> None:
 

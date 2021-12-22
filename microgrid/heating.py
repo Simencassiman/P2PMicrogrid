@@ -91,7 +91,6 @@ class HPHeating(Heating):
         return self.hp.power * self.hp.max_power
 
     def get_temperature(self) -> Tuple[float, float]:
-        # TODO: create environment
         t_out = environment.get_temperature(self._time)
         solar_rad = environment.get_irradiation(self._time)
 

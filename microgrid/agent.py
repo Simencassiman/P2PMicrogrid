@@ -5,7 +5,9 @@ import numpy as np
 import numpy.typing as npt
 
 # Local modules
+from microgrid import MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
 from config import TIME_SLOT
+import config as cf
 from controller import BackupController, BuildingController, ChargingController
 from production import Production
 from storage import Storage
@@ -49,13 +51,18 @@ class GridAgent(Agent):
 
     def __init__(self):
         super(GridAgent, self).__init__()
-        self.prices = (12.0 + 5.0 * np.sin(2 * np.pi *
-                                           np.array([0.25 * t
-                                                     for t in range(int(24 * 60 / TIME_SLOT))]) / 12 + 7)) * 0.01   # in c€
+        self.prices = (
+                (cf.GRID_COST_AVG +
+                 cf.GRID_COST_AMPLITUDE *
+                 np.sin(2 * np.pi * np.array([t / (MINUTES_PER_HOUR / TIME_SLOT)
+                                              for t in range(int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY))])
+                        / cf.GRID_COST_PERIOD + cf.GRID_COST_PHASE)
+                 ) / CENTS_PER_EURO   # from c€ to €
+        )
         self.injection_price: float = np.min(self.prices)
 
     def take_decision(self, **kwargs) -> Tuple[float, float]:
-        cost = self.prices[self.time]
+        cost = self.prices[self.time % int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY)]
         self._step()
 
         return cost, self.injection_price
