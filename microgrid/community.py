@@ -90,7 +90,31 @@ class CommunityMicrogrid:
         return power, costs
 
     def train(self) -> None:
-        pass
+        rewards = []
+        # for episode in range(EPISODES):
+        #
+        #     state = environment.reset()
+        #     for _ in range(MAX_STEPS):
+        #
+        #         if np.random.uniform(0, 1) < epsilon:
+        #             action = environment.action_space.sample()
+        #         else:
+        #             action = np.argmax(Q[state, :])
+        #
+        #         next_state, reward, done, _ = environment.step(action)
+        #
+        #         Q[state, action] = Q[state, action] + LEARNING_RATE * (
+        #                     reward + GAMMA * np.max(Q[next_state, :]) - Q[state, action])
+        #
+        #         state = next_state
+        #
+        #         if done:
+        #             rewards.append(reward)
+        #             epsilon -= 0.001
+        #             break  # reached goal
+        #
+        # print(Q)
+        print(f"Average reward: {sum(rewards) / len(rewards)}:")
 
     def _step(self) -> None:
         pass

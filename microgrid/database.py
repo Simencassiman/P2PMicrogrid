@@ -5,7 +5,8 @@ import pandas as pd
 from datetime import datetime
 
 # Local modules
-from config import DATA_PATH, DB_FILE
+from microgrid import MINUTES_PER_HOUR
+from config import DATA_PATH, DB_FILE, TIME_SLOT
 import access_smarthor_data_api as api
 
 
@@ -75,18 +76,54 @@ def get_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.Data
 
     return df
 
+def get_load_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.DataFrame:
+    query = """
+        SELECT * 
+        FROM load 
+        WHERE date >= ? AND date < ?     
+    """
+
+    return pd.read_sql_query(query, con, params=(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d')))
+
 
 if __name__ == '__main__':
 
-    start = datetime(2021, 10, 1)
-    end = datetime(2021, 11, 1)
+    start = datetime(2021, 11, 1)
+    val_start = datetime(2021, 11, 15)
+    val_end = datetime(2021, 11, 21)
+    end = datetime(2021, 12, 1)
 
     conn = get_connection()
 
     if conn is not None:
         cursor = conn.cursor()
 
-        df = get_data(conn, start, end)
+        df = get_load_data(conn, start, end)
+
+        df['date'] = df['date'].map(lambda t: datetime.strptime(t, '%Y-%m-%d'))
+
+        train_df = df[(df['date'] < val_start) | (df['date'] > val_end)]
+        val_df = df[(val_start <= df['date']) & (df['date'] <= val_end)]
+
+        print(train_df.head())
+        print(train_df.tail())
+        print(train_df[train_df['date'] == datetime(2021,11,16)])
+        print(val_df.head())
+        print(val_df.tail())
+
+        def compute_time_slot(time) -> int:
+            t = datetime.strptime(time, '%H:%M:%S')
+
+            return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
+
+        df['time'] = df['time'].map(lambda t: compute_time_slot(t))
+        df[['year', 'month', 'day']] = df['date'].str.split(pat='-', expand=True)
+        df.drop(['date', 'utc', 'year'], axis=1, inplace=True)
+        df = df[['time', 'day', 'month', 'l0']]
+        df['time'] = df['time'] / 96.
+        df['day'] = df['day'].astype(float) / 31.
+        df['month'] = df['month'].astype(float) / 12.
+        df['l0'] = df['l0'].astype(float) / df['l0'].max().astype(float)
 
         print(df.head())
         print(df.tail())
