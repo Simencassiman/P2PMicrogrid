@@ -8,8 +8,7 @@ from datetime import datetime
 from typing import List, Union, Optional
 from functools import reduce
 
-from microgrid import MINUTES_PER_HOUR
-from config import DB_PATH, TIME_SLOT
+from config import DB_PATH, TIME_SLOT, MINUTES_PER_HOUR
 from database import get_connection, get_data
 
 
@@ -54,7 +53,8 @@ class WindowGenerator:
                  val_df: Union[pd.DataFrame, List[pd.DataFrame]],
                  test_df: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
                  input_width: int = 1, label_width: int = 1,
-                 shift: int = 1, label_columns: List[str] = None):
+                 shift: int = 1, label_columns: List[str] = None,
+                 batch_size: int = 1):
         # Store the raw data.
         self.train_df = train_df
         self.val_df = val_df
@@ -85,6 +85,8 @@ class WindowGenerator:
         self.label_start = self.total_window_size - self.label_width
         self.labels_slice = slice(self.label_start, None)
         self.label_indices = np.arange(self.total_window_size)[self.labels_slice]
+
+        self.batch_size = batch_size
 
     @property
     def train_ds(self):
@@ -136,7 +138,7 @@ class WindowGenerator:
             sequence_length=self.total_window_size,
             sequence_stride=1,
             shuffle=False,
-            batch_size=1)
+            batch_size=self.batch_size)
 
         ds = ds.map(self.split_window)
 
@@ -182,9 +184,22 @@ class WindowGenerator:
             f'Label column name(s): {self.label_columns}'])
 
 
+def split_dataset(df: pd.DataFrame, length: int = 96):
+    loops = len(df) // length
+
+    for i in range(loops):
+        yield df.iloc[i * length:(i+1) * length, :]
+
+    yield df.iloc[loops * length:, :]
+
+
 horizon = 3
 wg = WindowGenerator(train_df=train_df_1, val_df=None,
                      input_width=horizon, shift=horizon, label_width=horizon, label_columns=list(val_df.columns))
+
+days_generator = (WindowGenerator(train_df=day, val_df=None, input_width=horizon, shift=horizon,
+                                  label_width=horizon, label_columns=list(val_df.columns))
+                  for day in split_dataset(train_df_1))
 # X = np.sin(np.arange(0, 100, step=0.1))
 # train_ds = TimeseriesGenerator(X[:, None], X[:, None], input_width=3, shift=3, batch_size=1)
 
@@ -199,7 +214,7 @@ class MyModel(keras.Model):
         self.lstm = keras.layers.LSTM(100, return_sequences=True)
         self.post = keras.Sequential([
             keras.layers.Dense(20, activation='relu'),
-            keras.layers.Dense(2, activation='linear')
+            keras.layers.Dense(2, activation='sigmoid')
         ])
         self._layers = keras.Sequential([
             self.pre,
@@ -256,15 +271,15 @@ def main() -> None:
 
         print('Training:')
         for x, y in tqdm(wg.train_ds):
-            loss = train_step(x, y)
+            loss = train_step(x, y[:, :, -2:])
 
         print("Training Loss: {:e}".format(train_loss.result()))
 
-        # print('Validating:')
-        # for x, y in tqdm(wg.val_ds):
-        #     test_step(x, y)
-        #
-        # print("Validation Loss: {:e}".format(val_loss.result()))
+        print('Validating:')
+        for x, y in tqdm(wg.train_ds):
+            test_step(x, y[:, :, -2:])
+
+        print("Validation Loss: {:e}".format(val_loss.result()))
 
         print('-----------------------')
 
@@ -274,8 +289,8 @@ def main() -> None:
     predictions1 = []
     targets1 = []
     for i, (x, y) in enumerate(wg.train_ds):
-        predictions1.append(model(x).numpy()[0, 0, :])
-        targets1.append(y.numpy()[0, 0, :])
+        predictions1.append(model(x).numpy()[0, -1, :])
+        targets1.append(y.numpy()[0, -1, -2:])
 
     targets1 = np.stack(targets1)
     predictions1 = np.stack(predictions1)
@@ -298,16 +313,17 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+    main()
 
-    x = tf.Variable(2.0)
-    y = tf.Variable(3.0)
-
-    with tf.GradientTape() as t:
-        y_sq = y ** 2
-        z1 = x ** 2 + tf.identity(tf.stop_gradient(y_sq))
-        z = z1 + 0.5 * y
-
-    [dz_dx, dz_dy] = t.gradient(z, [x, y])
-
-    print('dz/dx:', dz_dx)  # 2*x => 4
-    print('dz/dy:', dz_dy)
+    # x = tf.Variable(2.0)
+    # y = tf.Variable(3.0)
+    #
+    # with tf.GradientTape() as t:
+    #     y_sq = y ** 2
+    #     z1 = x ** 2 + tf.identity(tf.stop_gradient(y_sq))
+    #     z = z1 + 0.5 * y
+    #
+    # [dz_dx, dz_dy] = t.gradient(z, [x, y])
+    #
+    # print('dz/dx:', dz_dx)  # 2*x => 4
+    # print('dz/dy:', dz_dy)

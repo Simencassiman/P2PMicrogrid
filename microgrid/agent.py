@@ -5,8 +5,7 @@ import numpy as np
 import numpy.typing as npt
 
 # Local modules
-from microgrid import MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
-from config import TIME_SLOT
+from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
 import config as cf
 from controller import BackupController, BuildingController, ChargingController
 from production import Production

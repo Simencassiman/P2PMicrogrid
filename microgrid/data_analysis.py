@@ -10,8 +10,7 @@ import matplotlib.colors as mc  # For the legend
 from matplotlib.cm import ScalarMappable    # For the legend
 
 # Local modules
-from microgrid import MINUTES_PER_HOUR, HOURS_PER_DAY
-from config import TIME_SLOT
+from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
 from agent import ActingAgent
 
 

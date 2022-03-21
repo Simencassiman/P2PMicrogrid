@@ -8,8 +8,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # Local Modules
-from microgrid import environment, SECONDS_PER_HOUR
-from config import TIME_SLOT, DB_PATH
+from microgrid import environment
+from config import TIME_SLOT, DB_PATH, SECONDS_PER_HOUR
 from agent import Agent, ActingAgent, GridAgent, RuleAgent
 from production import Prosumer, Consumer, PV
 from storage import BatteryStorage, NoStorage, Battery

@@ -12,8 +12,7 @@ import statistics
 import random
 import sys
 
-from microgrid import MINUTES_PER_HOUR
-from config import DB_PATH, TIME_SLOT
+from config import DB_PATH, TIME_SLOT, MINUTES_PER_HOUR
 from database import get_connection, get_data
 from ml import WindowGenerator
 
@@ -168,6 +167,168 @@ class MyModel(keras.Model):
     @property
     def weights(self) -> Tuple:
         return self.actor_weights, self.critic_weights, self.common_weights
+
+class DDPG:
+
+    def __init__(self, buffer_size: int = 100, batch_size: int = 64, gamma: float = 0.99,
+                 critic_loss: keras.losses.Loss = keras.losses.MeanSquaredError(),
+                 actor_loss:  keras.losses.Loss = keras.losses.MeanSquaredError(),
+                 individual_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4),
+                 common_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Adam(learning_rate=5e-5),
+                 tau: float = 0.005):
+        self.model = MyModel()
+        self.target_model = MyModel()
+        self.copied_weights = False
+
+        self.actor_noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(2), theta=0.1, sigma=0.1)
+
+        self.batch_size = batch_size
+        self.buffer = ReplayBuffer(buffer_size, self.batch_size)
+
+        self._gamma = gamma
+        self.critic_loss = critic_loss
+        self.critic_optimizer = individual_optimizer
+        self.actor_loss = actor_loss
+        self.actor_optimizer = individual_optimizer
+        self.common_optimizer = common_optimizer
+        self._tau = tau
+
+    def _initialize_target(self, state: tf.Tensor) -> None:
+        self.target_model.predict(state)
+        self._soft_update(self.model.common_weights, self.target_model.common_weights)
+        self._soft_update(self.model.critic_weights, self.target_model.critic_weights)
+        self._soft_update(self.model.actor_weights, self.target_model.actor_weights)
+        self.copied_weights = True
+
+    def get_expected_return(self, rewards: tf.Tensor, next_state: tf.Tensor) -> tf.Tensor:
+        """
+        Compute expected returns per timestep.
+        """
+
+        n = tf.shape(rewards)[0]
+        returns = tf.TensorArray(dtype=tf.float32, size=n)
+
+        # Start from the end of `rewards` and accumulate reward sums
+        # into the `returns` array
+        rewards = tf.cast(rewards[::-1], dtype=tf.float32)
+        _, discounted_sum = self.target_model.predict(next_state)  # tf.constant(0.0)
+        discounted_sum_shape = discounted_sum.shape
+        for i in tf.range(n):
+            reward = rewards[i]
+            discounted_sum = reward + self._gamma * discounted_sum
+            discounted_sum.set_shape(discounted_sum_shape)
+            returns = returns.write(i, discounted_sum)
+
+        returns = returns.stack()[::-1]
+
+        return returns
+
+    def train_episode(self) -> float:
+        # Run the model for one episode to collect training data
+        states, actions, rewards, next_states = run_episode(self.model, self.actor_noise)
+
+        if not self.copied_weights:
+            self._initialize_target(states[1, :, :])
+
+        # Calculate expected returns
+        returns = self.get_expected_return(rewards, next_states[-1, :, :])
+
+        # Store in buffer
+        self.buffer.add(states, actions, returns, next_states)
+
+        # Train per step in buffer (in batch mode)
+        for i in range(10):
+            s, a, r, ns = [tf.squeeze(b) for b in self.buffer.sample_batch()]
+            self._train_critic(s, a, r, ns)
+            self._train_actor(s)
+
+            self.update_targets()
+
+        # Return performance for logging
+        return float(tf.math.reduce_sum(rewards))
+
+    @tf.function
+    def _train_critic(self, state: tf.Tensor, action: tf.Tensor, reward: tf.Tensor, next_state: tf.Tensor) -> None:
+        """
+        Use saved (s,a,r,s[t+1]) tuples to build up loss in every step and train only the critic (and common part)
+        In forward pass skip actor part since there is no need for it, the critic should use saved actions
+        to know what reward to expect
+        """
+
+        with tf.GradientTape() as tape:
+            # Full forward pass with target networks with the next state s(t+1), this produces q_target
+            # Temporal difference (TD) error loss(r + gamma * target_q - q)
+
+            # TD target = r - gamma * target_q
+            _, target_q = self.target_model.predict(next_state)
+            td_targets = tf.stop_gradient(reward + self._gamma * target_q)
+
+            # Estimate q value
+            q = self.model.forward_critic(state, action)
+
+            # TD error loss
+            # Could potentially clip error
+            critic_loss = self.critic_loss(td_targets, q)
+            # critic_loss = self.critic_loss(reward, q)
+
+        # Compute the gradients from the loss
+        [dl_dcritic, dl_dcommon] = tape.gradient(critic_loss, [self.model.critic_weights, self.model.common_weights])
+        # dl_dcritic = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in dl_dcritic]
+        # dl_dcommon = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in dl_dcommon]
+        dl_dcritic[0] = tf.clip_by_value(dl_dcritic[0], -1., 1.)
+        dl_dcommon[0] = tf.clip_by_value(dl_dcommon[0], -1., 1.)
+
+        # Apply the gradients to the model's parameters
+        self.critic_optimizer.apply_gradients(zip(dl_dcritic, self.model.critic_weights))
+        self.common_optimizer.apply_gradients(zip(dl_dcommon, self.model.common_weights))
+
+    @tf.function
+    def _train_actor(self, state: tf.Tensor) -> None:
+        """
+        Actor gets trained based on critic q values.
+        It gets the saved states as input and all the rest is determined from the model, so full forward pass.
+        Don't have associated reward for new actions, so can only train actor (and common part).
+        """
+
+        with tf.GradientTape() as tape:
+            q = self.model.forward_actor(state)
+
+        # Compute the gradients from the loss
+        [dl_dactor, dl_dcommon] = tape.gradient(q, [self.model.actor_weights, self.model.common_weights])
+        # dl_dactor = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in dl_dactor]
+        # dl_dcommon = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in dl_dcommon]
+        dl_dactor[0] = tf.clip_by_value(dl_dactor[0], -1., 1.)
+        dl_dcommon[0] = tf.clip_by_value(dl_dcommon[0], -1., 1.)
+
+        # Apply the gradients to the model's parameters
+        self.actor_optimizer.apply_gradients(zip(dl_dactor, self.model.actor_weights))
+        self.common_optimizer.apply_gradients(zip(dl_dcommon, self.model.common_weights))
+
+    def _soft_update(self, source_variables,
+                     target_variables,
+                     tau=1.0,
+                     tau_non_trainable=None):
+        op_name = 'soft_variables_update'
+        updates = []
+        for (v_s, v_t) in zip(source_variables, target_variables):
+            if not v_t.trainable:
+                current_tau = tau_non_trainable
+            else:
+                current_tau = tau
+
+            if current_tau == 1.0:
+                update = v_t.assign(v_s)
+            else:
+                update = v_t.assign((1 - current_tau) * v_t + current_tau * v_s)
+
+            updates.append(update)
+
+        return tf.group(*updates, name=op_name)
+
+    def update_targets(self) -> None:
+        self._soft_update(self.model.common_weights, self.target_model.common_weights, self._tau)
+        self._soft_update(self.model.critic_weights, self.target_model.critic_weights, self._tau)
+        self._soft_update(self.model.actor_weights, self.target_model.actor_weights, self._tau)
 
 
 model = MyModel()
