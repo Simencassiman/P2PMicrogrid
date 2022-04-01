@@ -106,12 +106,12 @@ def get_load_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd
 
 
 def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: int,
-                 training: float, validation: float) -> None:
+                 training: float, validation: float, q_error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?)"
+        query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        cursor.execute(query, (settings, trial, episode, training, validation))
+        cursor.execute(query, (settings, trial, episode, training, validation, q_error))
 
         con.commit()
 
@@ -125,7 +125,6 @@ def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], t
         time = list(map(lambda t: str(t), time))
         n = len(load)
         records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
-        print(records[0])
 
         cursor.executemany(query, records)
 
@@ -143,26 +142,54 @@ if __name__ == '__main__':
 
     if conn is not None:
 
+
+        # query = """
+        #     SELECT settings, time, load
+        #     FROM single_day_best_results
+        #     WHERE settings LIKE '%episodes=10000%' AND settings LIKE '%ls=1e-06%'
+        # """
+        #
+        # df = pd.read_sql_query(query, conn)
+        # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
+        # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
+        # df['time'] = df['time'].apply(lambda x: float(x))
+        # settings = df['settings']
+        # df = df.pivot(index='time', columns='settings', values='load')
+        # target = pd.read_sql_query("""
+        #     SELECT time, target_load
+        #     FROM single_day_best_results
+        #     WHERE settings LIKE '%bs=32;gamma=0.95;ls=1e-07%' AND settings LIKE '%episodes=20000%'
+        #     """, conn)
+        # target['time'] = target['time'].apply(lambda x: float(x))
+        #
+        # ax = df.plot(xticks=df.index, ylabel='Load [-]')
+        # # ax.get_legend().remove()
+        # # ax.set_xticks([i * 1000 for i in range(21) if i % 2 == 0])
+        # ax.plot(target['time'], target['target_load'])
+        #
+        # plt.show()
+
+        # Check training and validation results
         query = """
-            SELECT settings, episode, AVG(training) as train
+            SELECT settings, trial, episode 
             FROM hyperparameters_single_day
-            WHERE settings NOT LIKE '%ls=1e-05%'
-            GROUP BY settings, episode 
-            ORDER BY settings, episode 
+            WHERE settings LIKE '%bu=100000%'
         """
 
         df = pd.read_sql_query(query, conn)
-        print(df.head())
+        print(df.tail())
         print(df.columns)
-        pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
-        df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
-        settings = df['settings']
-        df = df.pivot(index='episode', columns='settings', values='train')
-        print(df.columns)
-
-        ax = df.plot(xticks=df.index, ylabel='Reward')
-
-        plt.show()
+        # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
+        # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
+        # settings = df['settings']
+        # df = df.pivot(index='episode', columns='settings', values='train')
+        # print(df.columns)
+        #
+        # ax = df.plot(xticks=df.index, ylabel='Reward')
+        # ax.get_legend().remove()
+        # ax.set_xticks([i * 1000 for i in range(21) if i % 2 == 0])
+        #
+        # plt.show()
 
         # print(df['episode'].head())
         # print(df.columns)
