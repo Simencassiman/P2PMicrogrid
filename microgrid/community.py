@@ -8,7 +8,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # Local Modules
-from microgrid import environment
+from microgrid.environment import env
 from config import TIME_SLOT, DB_PATH, SECONDS_PER_HOUR
 from agent import Agent, ActingAgent, GridAgent, RuleAgent
 from production import Prosumer, Consumer, PV
@@ -16,6 +16,7 @@ from storage import BatteryStorage, NoStorage, Battery
 from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
 import database as db
+
 
 def get_rule_based_community(start: datetime, end: datetime, n_agents: int = 5) -> CommunityMicrogrid:
 
@@ -58,7 +59,7 @@ def get_rule_based_community(start: datetime, end: datetime, n_agents: int = 5) 
                       )
 
     # Prepare environment
-    environment.setup(temperature, cloud_cover, humidity, irradiance)
+    env.setup(temperature, cloud_cover, humidity, irradiance)
 
     return CommunityMicrogrid(timeline, agents)
 

@@ -30,7 +30,7 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime], po
     self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
 
     cost = cost.sum(axis=0)
-    fixed_cost = (0.25 * 0.2 * cost + 50 * np.maximum(2.5, power.max(axis=0) * 1e-3))
+    fixed_cost = (0.25 * 0.2 * cost + 50 / 12 * np.maximum(2.5, power.max(axis=0) * 1e-3))
     print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3} kWh')
     print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity')
 

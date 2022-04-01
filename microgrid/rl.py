@@ -13,6 +13,7 @@ import gc
 
 import config as cf
 from config import DB_PATH, TIME_SLOT, MODELS_PATH, CENTS_PER_EURO, HOURS_PER_DAY
+import heating
 import database
 from database import get_connection, get_data
 import ml
@@ -355,24 +356,32 @@ df = get_data(conn, start, end)
 df['time'] = df['time'].map(lambda t: compute_time_slot(t))
 df[['year', 'month', 'day']] = df['date'].str.split(pat='-', expand=True)
 df['time'] = df['time'] / 96.
-df['day'] = df['day'].astype(float) / 31.
-df['month'] = df['month'].astype(float) / 12.
-df['l0'] = df['l0'].astype(float) / (df['l0'].max().astype(float) * 1.1)
-df['pv'] = df['pv'].astype(float) / (df['pv'].max().astype(float) * 1.1)
+# df['day'] = df['day'].astype(float) / 31.
+# df['month'] = df['month'].astype(float) / 12.
+# df['l0'] = df['l0'].astype(float) / (df['l0'].max().astype(float) * 1.1)
+# df['pv'] = df['pv'].astype(float) / (df['pv'].max().astype(float) * 1.1)
 df['date'] = df['date'].map(lambda t: datetime.strptime(t, '%Y-%m-%d'))
 
 nr_outputs = 1
 outputs = ['l0', 'pv']
-cols = ['time', 'day', 'month'] + outputs[:nr_outputs]
-# cols = ['time', 'day', 'month', 'temperature', 'cloud_cover', 'humidity'] + outputs[:nr_outputs]
+cols = ['time', 'temperature']
+
 train_df_1 = df[df['date'] < val_start][cols]
+train_df_1['balance'] = df[df['date'] < val_start]['l0'] - df[df['date'] < val_start]['pv']
+
 train_df_2 = df[df['date'] > val_end][cols]
+train_df_2['balance'] = df[df['date'] > val_end]['l0'] - df[df['date'] > val_end]['pv']
+
+balance_max = max(train_df_1['balance'].max() * 1.1, train_df_2['balance'].max() * 1.1)
+train_df_1['balance'] = train_df_1['balance'] / balance_max
+train_df_2['balance'] = train_df_2['balance'] / balance_max
+
 val_df = df[(val_start <= df['date']) & (df['date'] <= val_end)][cols]
 
 horizon = 3
 wg = WindowGenerator(train_df=train_df_1, val_df=None,
                      input_width=horizon, label_width=horizon, label_columns=list(val_df.columns),
-                     batch_size=96)
+                     batch_size=1)
 price = (
         (cf.GRID_COST_AVG +
          cf.GRID_COST_AMPLITUDE *
@@ -399,24 +408,36 @@ def run_episode(model: tf.keras.Model,
     # initial_state_shape = initial_state.shape
     # state = initial_state
     actor_noise.reset()
+    t_in = tf.Tensor([21.0] * horizon)[None, :, None]
+    t_bm = tf.Tensor([21.0] * horizon)[None, :, None]
+    cop = 3.
 
-    for t, (state, next_state) in enumerate(wg.train_ds):
-        y = next_state[:, :, -nr_outputs:]
+    for t, (state, next_state, p) in enumerate(zip(wg.train_ds, price)):
+        t_out = state[:, :, 0]
         t = int(t)
+        state = tf.concat(state, t_in, t_bm, axis=-1)
 
         # Run the model and to get action probabilities and critic value
         action = model(state)
         action = action + actor_noise()
 
+        # Compute temperature evolution
+        t_in, t_bm = heating.temperature_simulation(t_out, t_in, t_bm, action, cop)
+
         # Store state
         states = states.write(t, state)
+        next_state = tf.concat(next_state, t_in, t_bm, axis=-1)
         next_states = next_states.write(t, next_state)
 
         # Store chosen action
         actions = actions.write(t, action)
 
         # Store reward
-        rewards = rewards.write(t, -tf.math.reduce_sum(tf.math.squared_difference(y, action), axis=-2))
+        p_out = (state[:, -1, 2] + action[:, -1, :])
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.11)
+        t_penalty = 0.1 * max(max(0, 20 - t_in[:, -1, -1]), max(0, t_in[:, -1, -1] - 22))
+        r = - (cost + t_penalty)
+        rewards = rewards.write(t, r)
 
     states = states.concat()
     actions = actions.concat()
@@ -564,75 +585,80 @@ episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_crite
 
 if __name__ == '__main__':
 
-    for b, bs in enumerate([128]):
+    print(train_df_1.head())
 
-        # Set up settings string for saving the results
-        hyperparams = f'activation={activation};episodes={max_episodes};bu={bu};bs={bs};gamma={gamma};ls={lr};'\
-                      f'tau={tau};sd={sd};theta={theta};sigma={sigma};horizon={horizon};clr=x2'
-
-        print(f'----- {hyperparams} ----- ')
-
-        # Run trials to average results
-        model_acc = np.zeros(trials)
-        for trial in range(trials):
-            # Reinitialize
-            ddpg = DDPG(outputs=nr_outputs, buffer_size=bu, batch_size=bs, gamma=gamma,
-                        critic_loss=mse_loss,
-                        actor_loss=mse_loss,
-                        critic_optimizer=tf.keras.optimizers.Adam(learning_rate=lr * 2),
-                        actor_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
-                        tau=tau, theta=theta, sigma=sigma, sd=sd)
-            episodes_reward.clear()
-
-            # Load partially trained models
-            # prev_hyperparams = f'activation=sigmoid;episodes={starting_episodes};bu={bu};bs={bs};' \
-            #                    f'gamma={gamma};ls={lr};tau={tau};sd={sd};theta={theta};sigma={sigma};' \
-            #                    f'horizon={horizon}'
-            # load_models('checkpoints', prev_hyperparams, trial, ddpg.actor, ddpg.critic,
-            #             ddpg.target_actor, ddpg.target_critic)
-
-            print(f'----- Running trial {trial + 1} -----')
-
-            # Train
-            result = run_single_trial(ddpg, hyperparams, trial)
-
-            # Log results
-            model_acc[trial] = result
-
-        # Log bets performer to test later
-        best_trial = int(np.argmax(model_acc))
-        ddpg = DDPG(outputs=nr_outputs, buffer_size=bu, batch_size=bs, gamma=gamma,
-                    critic_loss=mse_loss,
-                    actor_loss=mse_loss,
-                    critic_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
-                    actor_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
-                    tau=tau, theta=theta, sigma=sigma)
-
-        # Save best checkpointed model
-        load_models('checkpoints', hyperparams, best_trial, ddpg.actor,
-                    ddpg.critic, ddpg.target_actor, ddpg.target_critic)
-        # Save it as best trial
-        save_models('best_trials', hyperparams, best_trial, ddpg.actor,
-                    ddpg.critic, ddpg.target_actor, ddpg.target_critic)
-
-        # Store predictions
-        targets, predictions, errors, q_estimates = check_performance(ddpg, hyperparams)
-
-        # Plot predictions
-        plt.figure(10 * b)
-        plt.plot(np.arange(targets.shape[0]), targets[:, -1:], predictions)
-        plt.title(hyperparams)
-        plt.legend(['Target load',
-                    'Prediction load'])
-
-        plt.figure(10 * b + 1)
-        plt.plot(np.arange(targets.shape[0]), errors, q_estimates)
-        plt.title(hyperparams)
-        plt.legend(['Error',
-                    'Q'])
-
-        # Garbage collection
-        del ddpg
-        gc.collect()
-
+    plt.plot(train_df_1['time'], train_df_1['balance'])
     plt.show()
+
+    # for b, bs in enumerate([128]):
+    #
+    #     # Set up settings string for saving the results
+    #     hyperparams = f'activation={activation};episodes={max_episodes};bu={bu};bs={bs};gamma={gamma};ls={lr};'\
+    #                   f'tau={tau};sd={sd};theta={theta};sigma={sigma};horizon={horizon};clr=x2'
+    #
+    #     print(f'----- {hyperparams} ----- ')
+    #
+    #     # Run trials to average results
+    #     model_acc = np.zeros(trials)
+    #     for trial in range(trials):
+    #         # Reinitialize
+    #         ddpg = DDPG(outputs=nr_outputs, buffer_size=bu, batch_size=bs, gamma=gamma,
+    #                     critic_loss=mse_loss,
+    #                     actor_loss=mse_loss,
+    #                     critic_optimizer=tf.keras.optimizers.Adam(learning_rate=lr * 2),
+    #                     actor_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+    #                     tau=tau, theta=theta, sigma=sigma, sd=sd)
+    #         episodes_reward.clear()
+    #
+    #         # Load partially trained models
+    #         # prev_hyperparams = f'activation=sigmoid;episodes={starting_episodes};bu={bu};bs={bs};' \
+    #         #                    f'gamma={gamma};ls={lr};tau={tau};sd={sd};theta={theta};sigma={sigma};' \
+    #         #                    f'horizon={horizon}'
+    #         # load_models('checkpoints', prev_hyperparams, trial, ddpg.actor, ddpg.critic,
+    #         #             ddpg.target_actor, ddpg.target_critic)
+    #
+    #         print(f'----- Running trial {trial + 1} -----')
+    #
+    #         # Train
+    #         result = run_single_trial(ddpg, hyperparams, trial)
+    #
+    #         # Log results
+    #         model_acc[trial] = result
+    #
+    #     # Log bets performer to test later
+    #     best_trial = int(np.argmax(model_acc))
+    #     ddpg = DDPG(outputs=nr_outputs, buffer_size=bu, batch_size=bs, gamma=gamma,
+    #                 critic_loss=mse_loss,
+    #                 actor_loss=mse_loss,
+    #                 critic_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+    #                 actor_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+    #                 tau=tau, theta=theta, sigma=sigma)
+    #
+    #     # Save best checkpointed model
+    #     load_models('checkpoints', hyperparams, best_trial, ddpg.actor,
+    #                 ddpg.critic, ddpg.target_actor, ddpg.target_critic)
+    #     # Save it as best trial
+    #     save_models('best_trials', hyperparams, best_trial, ddpg.actor,
+    #                 ddpg.critic, ddpg.target_actor, ddpg.target_critic)
+    #
+    #     # Store predictions
+    #     targets, predictions, errors, q_estimates = check_performance(ddpg, hyperparams)
+    #
+    #     # Plot predictions
+    #     plt.figure(10 * b)
+    #     plt.plot(np.arange(targets.shape[0]), targets[:, -1:], predictions)
+    #     plt.title(hyperparams)
+    #     plt.legend(['Target load',
+    #                 'Prediction load'])
+    #
+    #     plt.figure(10 * b + 1)
+    #     plt.plot(np.arange(targets.shape[0]), errors, q_estimates)
+    #     plt.title(hyperparams)
+    #     plt.legend(['Error',
+    #                 'Q'])
+    #
+    #     # Garbage collection
+    #     del ddpg
+    #     gc.collect()
+    #
+    # plt.show()

@@ -53,3 +53,6 @@ class Environment(metaclass=Singleton):
             return 0
 
         return self._irradiation[idx]
+
+
+env = Environment()

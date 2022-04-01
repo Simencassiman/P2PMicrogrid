@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 # Local modules
 from config import TIME_SLOT
-from microgrid import environment
+from microgrid.environment import env
 
 
 """
@@ -24,6 +24,27 @@ f_rad = 0.3
 """
     End parameters
 """
+
+
+def temperature_simulation(t_out: float, t_in: float, t_bm: float,
+                           hp_power: float, hp_cop: float,
+                           solar_rad: float = 0) -> Tuple[float, float]:
+    dT_in = 1 / Ci * (
+            1 / Ri * (t_bm - t_in) +
+            1 / Rvent * (t_out - t_in) +
+            (1 - f_rad) * hp_power * hp_cop
+    )
+
+    dT_m = 1 / Cm * (
+            1 / Ri * (t_in - t_bm) +
+            1 / Re * (t_out - t_bm) + gA * solar_rad +
+            f_rad * hp_power * hp_cop
+    )
+
+    t_in_new = t_in + dT_in * 60 * TIME_SLOT
+    t_m_new = t_bm + dT_m * 60 * TIME_SLOT
+
+    return t_in_new, t_m_new
 
 
 class Heating(ABC):
@@ -91,25 +112,12 @@ class HPHeating(Heating):
         return self.hp.power * self.hp.max_power
 
     def get_temperature(self) -> Tuple[float, float]:
-        t_out = environment.get_temperature(self._time)
-        solar_rad = environment.get_irradiation(self._time)
+        t_out = env.get_temperature(self._time)
+        solar_rad = env.get_irradiation(self._time)
 
-        dT_in = 1/Ci * (
-            1/Ri * (self._t_building_mass - self._t_building_mass) +
-            1/Rvent * (t_out - self._t_indoor) +
-            (1 - f_rad) * self.power * self.hp.cop
-        )
-
-        dT_m = 1/Cm * (
-            1/Ri * (self._t_indoor - self._t_building_mass) +
-            1/Re * (t_out - self._t_building_mass) + gA * solar_rad +
-            f_rad * self.power * self.hp.cop
-        )
-
-        t_in_new = self._t_indoor + dT_in * 60 * TIME_SLOT
-        t_m_new = self._t_building_mass + dT_m * 60 * TIME_SLOT
-
-        return t_in_new, t_m_new
+        return temperature_simulation(t_out, self._t_indoor, self._t_building_mass,
+                                      self.power, self.hp.cop,
+                                      solar_rad)
 
     def has_heater(self) -> bool:
         return True
