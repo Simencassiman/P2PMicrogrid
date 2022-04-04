@@ -1,5 +1,6 @@
 # Python Libraries
-from typing import List
+from typing import Generator
+import tensorflow as tf
 
 
 class Singleton(type):
@@ -15,44 +16,50 @@ class Environment(metaclass=Singleton):
 
     def __init__(self):
         self._initialized = False
-        self._temperature: List[float] = []
-        self._cloud_cover: List[float] = []
-        self._humidity: List[float] = []
-        self._irradiation: List[float] = []
+        self._running = False
 
-    def setup(self, temp: List[float], clouds: List[float], humidity: List[float], solar: List[float] = None) -> None:
-        self._temperature = temp
-        self._cloud_cover = clouds
-        self._humidity = humidity
-        self._irradiation = solar if solar is not None else self._irradiance_from_clouds(clouds)
+        self._length: int = 0
+        self._time: float = 0.
+        self._temperature: float = 0.
+        self._dataset: tf.data.Dataset = None
+
+    def setup(self, data: tf.data.Dataset) -> None:
+        self._dataset = data
+        self._length = len(data)
         self._initialized = True
 
-    def _irradiance_from_clouds(self, clouds: List[float]) -> List[float]:
-        return [0] * len(clouds)
+    @property
+    def data(self) -> Generator[tf.Tensor, None, None]:
+        if not self._initialized:
+            return None
 
-    def get_temperature(self, idx: int) -> float:
-        if not self._initialized or idx >= len(self._temperature):
-            return 0
+        self._running = True
 
-        return self._temperature[idx]
+        for d in self._dataset:
+            self._time = d[0][0]
+            self._temperature = d[0][1]
 
-    def get_cloud_cover(self, idx: int) -> float:
-        if not self._initialized or idx >= len(self._cloud_cover):
-            return 0
+            yield d
 
-        return self._cloud_cover[idx]
+        self._running = False
+        return None
 
-    def get_humidity(self, idx: int) -> float:
-        if not self._initialized or idx >= len(self._humidity):
-            return 0
+    @property
+    def time(self) -> float:
+        if not self._running:
+            return 0.
 
-        return self._humidity[idx]
+        return self._time
 
-    def get_irradiation(self, idx: int) -> float:
-        if not self._initialized or idx >= len(self._irradiation):
-            return 0
+    @property
+    def temperature(self) -> float:
+        if not self._running:
+            return 0.
 
-        return self._irradiation[idx]
+        return self._temperature
+
+    def __len__(self) -> int:
+        return self._length
 
 
 env = Environment()

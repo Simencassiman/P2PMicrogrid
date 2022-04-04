@@ -14,18 +14,19 @@ from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
 from agent import ActingAgent
 
 
-def analyse_community_output(agents: List[ActingAgent], time: List[datetime], power: np.ndarray, cost: np.ndarray) -> None:
+def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
+                             power: np.ndarray, cost: np.ndarray) -> None:
 
     slots_per_day = int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY)
 
     nr_agents = len(agents)
     agent = agents[0]
     agent_ids = [a.id for a in agents]
-    pv: np.array = agent.production.pv.production
-    temperature = np.array(agent.heating._history)
-    battery = np.array(agent.storage._history)
+    pv: np.array = np.array(agent.pv.get_history())
+    temperature = np.array(agent.heating.get_history())
+    battery = np.array(agent.storage.get_history())
 
-    production = np.array(list(map(lambda a: a.production.pv.production, filter(lambda a: a.id < 4, agents))))\
+    production = np.array(list(map(lambda a: a.pv.get_history(), filter(lambda a: a.id < 4, agents))))\
                     .transpose()
     self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
 
@@ -38,8 +39,9 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime], po
     nr_ticks_factor = 16
     time = time[:slots_per_day]
     time_ticks = np.arange(int(slots_per_day / nr_ticks_factor)) * nr_ticks_factor
-    time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
-    time = [t.isoformat() for t in time]
+    time_labels = [t for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    # time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    # time = [t.isoformat() for t in time]
 
     plt.figure(1)
     plt.plot(time[:slots_per_day], power[:slots_per_day, 0] * 1e-3)
@@ -68,12 +70,12 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime], po
     plt.xlabel("Time")
     plt.ylabel("Temperature [°C]")
 
-    plt.figure(4)
-    plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
-    plt.xticks(time_ticks, time_labels)
-    plt.title("Battery SOC")
-    plt.xlabel("Time")
-    plt.ylabel("SOC [%]")
+    # plt.figure(4)
+    # plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
+    # plt.xticks(time_ticks, time_labels)
+    # plt.title("Battery SOC")
+    # plt.xlabel("Time")
+    # plt.ylabel("SOC [%]")
 
     plt.figure(5)
     plt.bar(agent_ids[:4], self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)

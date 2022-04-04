@@ -1,19 +1,21 @@
 # Python Libraries
 from __future__ import annotations
-from typing import List, Tuple
-from abc import ABC, abstractmethod
+from typing import List, Tuple, TypeVar
+from abc import abstractmethod
 from dataclasses import dataclass
+import tensorflow as tf
 
 # Local modules
 from config import TIME_SLOT
-from microgrid.environment import env
+from environment import env
+from electrical_asset import ElectricalAsset
 
 
 """
     Simulator parameters
 """
 
-Ci = 2.44e6
+Ci = 2.44e6 * 5
 Cm = 9.4e7
 Ri = 8.64e-4
 Re = 1.05e-2
@@ -25,10 +27,10 @@ f_rad = 0.3
     End parameters
 """
 
-
-def temperature_simulation(t_out: float, t_in: float, t_bm: float,
-                           hp_power: float, hp_cop: float,
-                           solar_rad: float = 0) -> Tuple[float, float]:
+T = TypeVar('T')
+def temperature_simulation(t_out: T, t_in: float, t_bm: float,
+                           hp_power: T, hp_cop: float,
+                           solar_rad: float = 0) -> Tuple[T, T]:
     dT_in = 1 / Ci * (
             1 / Ri * (t_bm - t_in) +
             1 / Rvent * (t_out - t_in) +
@@ -47,7 +49,7 @@ def temperature_simulation(t_out: float, t_in: float, t_bm: float,
     return t_in_new, t_m_new
 
 
-class Heating(ABC):
+class Heating(ElectricalAsset):
 
     @property
     @abstractmethod
@@ -61,12 +63,12 @@ class Heating(ABC):
 
     @property
     @abstractmethod
-    def temperature(self) -> float:
+    def temperature(self) -> tf.Tensor:
         ...
 
     @property
     @abstractmethod
-    def power(self) -> float:
+    def power(self) -> tf.Tensor:
         ...
 
     @abstractmethod
@@ -92,6 +94,8 @@ class HPHeating(Heating):
         self.hp = hp
         self._time = 0
         self._history: List[float] = []
+
+        self._temperature_setpoint = temperature_setpoint
         self._t_building_mass: float = temperature_setpoint
         self._t_indoor = temperature_setpoint
 
@@ -104,16 +108,16 @@ class HPHeating(Heating):
         return self.temperature_choice[1]
 
     @property
-    def temperature(self) -> float:
-        return self._t_indoor
+    def temperature(self) -> tf.Tensor:
+        return tf.convert_to_tensor([self._t_indoor])
 
     @property
-    def power(self) -> float:
-        return self.hp.power * self.hp.max_power
+    def power(self) -> tf.Tensor:
+        return tf.convert_to_tensor([self.hp.power * self.hp.max_power])
 
-    def get_temperature(self) -> Tuple[float, float]:
-        t_out = env.get_temperature(self._time)
-        solar_rad = env.get_irradiation(self._time)
+    def get_temperature(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        t_out = env.temperature
+        solar_rad = 0.      # env.get_irradiation(self._time)
 
         return temperature_simulation(t_out, self._t_indoor, self._t_building_mass,
                                       self.power, self.hp.cop,
@@ -129,7 +133,17 @@ class HPHeating(Heating):
     def step(self) -> None:
         self._history.append(self._t_indoor)
         self._t_indoor, self._t_building_mass = self.get_temperature()
+        self._t_indoor = float(self._t_indoor[0])
         self._time += 1
+
+    def reset(self) -> None:
+        self._time = 0
+        self._history = []
+        self._t_indoor = self._temperature_setpoint
+        self._t_building_mass = self._temperature_setpoint
+
+    def get_history(self) -> List[float]:
+        return self._history
 
 
 @dataclass

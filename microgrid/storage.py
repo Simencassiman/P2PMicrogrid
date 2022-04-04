@@ -1,11 +1,15 @@
+# Python Libraries
 from __future__ import annotations
 from typing import List
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
 import numpy as np
 
+# Local modules
+from electrical_asset import ElectricalAsset
 
-class Storage(ABC):
+
+class Storage(ElectricalAsset):
 
     @property
     @abstractmethod
@@ -73,6 +77,14 @@ class BatteryStorage(Storage):
         self._history.append(self.battery.soc)
         self._time += 1
 
+    def reset(self) -> None:
+        self._time = 0
+        self._history = []
+        self.battery.soc = 0.5
+
+    def get_history(self) -> List[float]:
+        return self._history
+
 
 class NoStorage(Storage):
 
@@ -91,14 +103,16 @@ class NoStorage(Storage):
     def to_soc(self, energy: float) -> float:
         return 0
 
-    def charge(self, amount: float) -> None:
-        ...
+    def charge(self, amount: float) -> None: ...
 
-    def discharge(self, amount: float) -> None:
-        ...
+    def discharge(self, amount: float) -> None: ...
 
-    def step(self) -> None:
-        ...
+    def step(self) -> None: ...
+
+    def reset(self) -> None: ...
+
+    def get_history(self) -> List[float]:
+        return []
 
 
 @dataclass
