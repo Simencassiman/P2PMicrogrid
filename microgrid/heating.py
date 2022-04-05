@@ -3,19 +3,23 @@ from __future__ import annotations
 from typing import List, Tuple, TypeVar
 from abc import abstractmethod
 from dataclasses import dataclass
+
+import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 # Local modules
-from config import TIME_SLOT
+from config import TIME_SLOT, SECONDS_PER_MINUTE
 from environment import env
 from electrical_asset import ElectricalAsset
+import dataset as ds
 
 
 """
     Simulator parameters
 """
 
-Ci = 2.44e6 * 5
+Ci = 2.44e6
 Cm = 9.4e7
 Ri = 8.64e-4
 Re = 1.05e-2
@@ -27,24 +31,26 @@ f_rad = 0.3
     End parameters
 """
 
+
 T = TypeVar('T')
-def temperature_simulation(t_out: T, t_in: float, t_bm: float,
-                           hp_power: T, hp_cop: float,
-                           solar_rad: float = 0) -> Tuple[T, T]:
+def temperature_simulation(t_out: float, t_in: float, t_bm: float,
+                           hp_power: float, hp_cop: float,
+                           solar_rad: float = 0) -> Tuple[float, float]:
     dT_in = 1 / Ci * (
-            1 / Ri * (t_bm - t_in) +
-            1 / Rvent * (t_out - t_in) +
-            (1 - f_rad) * hp_power * hp_cop
+            1 / Ri * (t_bm - t_in)
+            + 1 / Rvent * (t_out - t_in)
+            + (1 - f_rad) * hp_power * hp_cop
     )
 
     dT_m = 1 / Cm * (
-            1 / Ri * (t_in - t_bm) +
-            1 / Re * (t_out - t_bm) + gA * solar_rad +
-            f_rad * hp_power * hp_cop
+            1 / Ri * (t_in - t_bm)
+            + 1 / Re * (t_out - t_bm)
+            + gA * solar_rad
+            + f_rad * hp_power * hp_cop
     )
 
-    t_in_new = t_in + dT_in * 60 * TIME_SLOT
-    t_m_new = t_bm + dT_m * 60 * TIME_SLOT
+    t_in_new = t_in + dT_in * SECONDS_PER_MINUTE * TIME_SLOT
+    t_m_new = t_bm + dT_m * SECONDS_PER_MINUTE * TIME_SLOT
 
     return t_in_new, t_m_new
 
@@ -94,6 +100,7 @@ class HPHeating(Heating):
         self.hp = hp
         self._time = 0
         self._history: List[float] = []
+        self._power_history = []
 
         self._temperature_setpoint = temperature_setpoint
         self._t_building_mass: float = temperature_setpoint
@@ -128,10 +135,10 @@ class HPHeating(Heating):
 
     def set_power(self, power: float) -> None:
         self.hp.power = power
-        pass
 
     def step(self) -> None:
         self._history.append(self._t_indoor)
+        self._power_history.append(self.power)
         self._t_indoor, self._t_building_mass = self.get_temperature()
         self._t_indoor = float(self._t_indoor[0])
         self._time += 1
@@ -152,3 +159,28 @@ class HeatPump:
     cop: float
     max_power: float
     power: float
+
+
+if __name__ == '__main__':
+    power = 0.
+
+    t_indoor = 21.
+    t_building_mass = 20.
+    cop = 3
+
+    env_df, _ = ds.get_train_data()
+    time = np.arange(len(env_df['time']))
+
+    t_outdoor = np.array(env_df['temperature'])
+    temp = np.zeros(len(time))
+    bm_temp = np.zeros(len(time))
+
+    for t in time:
+        temp[t] = t_indoor
+        bm_temp[t] = t_building_mass
+
+        t_indoor, t_building_mass = temperature_simulation(t_outdoor[t], t_indoor, t_building_mass, power, cop)
+
+    plt.plot(time, t_outdoor)
+    plt.plot(time, temp, bm_temp)
+    plt.show()

@@ -24,16 +24,16 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
     agent_ids = [a.id for a in agents]
     pv: np.array = np.array(agent.pv.get_history())
     temperature = np.array(agent.heating.get_history())
-    battery = np.array(agent.storage.get_history())
+    battery = np.array(agent.heating._power_history)
 
     production = np.array(list(map(lambda a: a.pv.get_history(), filter(lambda a: a.id < 4, agents))))\
                     .transpose()
     self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
 
     cost = cost.sum(axis=0)
-    fixed_cost = (0.25 * 0.2 * cost + 50 / 12 * np.maximum(2.5, power.max(axis=0) * 1e-3))
+    fixed_cost = (0.25 * 0.2 * cost + 50 / 365 * np.maximum(2.5, power.max(axis=0) * 1e-3))
     print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3} kWh')
-    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity')
+    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity. Total: {cost + fixed_cost} €')
 
     # Create plots
     nr_ticks_factor = 16
@@ -70,12 +70,12 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
     plt.xlabel("Time")
     plt.ylabel("Temperature [°C]")
 
-    # plt.figure(4)
-    # plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
-    # plt.xticks(time_ticks, time_labels)
-    # plt.title("Battery SOC")
-    # plt.xlabel("Time")
-    # plt.ylabel("SOC [%]")
+    plt.figure(4)
+    plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
+    plt.xticks(time_ticks, time_labels)
+    plt.title("Battery SOC")
+    plt.xlabel("Time")
+    plt.ylabel("SOC [%]")
 
     plt.figure(5)
     plt.bar(agent_ids[:4], self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)

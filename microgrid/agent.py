@@ -7,12 +7,11 @@ import tensorflow as tf
 # Local modules
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
 import config as cf
-from environment import env
 from controller import BackupController, BuildingController, ChargingController
 from production import Production
 from storage import Storage
 from heating import Heating
-from ev import EV
+import rl
 
 
 class Agent(ABC):
@@ -40,7 +39,7 @@ class Agent(ABC):
     def _communicate(self) -> List:
         ...
 
-    def _step(self) -> None:
+    def step(self) -> None:
         self.time += 1
 
     def reset(self) -> None:
@@ -55,7 +54,7 @@ class GridAgent(Agent):
         self._cost_avg = cf.GRID_COST_AVG
         self._cost_amplitude = cf.GRID_COST_AMPLITUDE
         self._cost_phase = cf.GRID_COST_PHASE
-        self._cost_frequency = 2 * np.pi * MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY / cf.GRID_COST_PERIOD
+        self._cost_frequency = 2 * np.pi * HOURS_PER_DAY / cf.GRID_COST_PERIOD
         self._cost_normalization = CENTS_PER_EURO
 
         self._injection_price = tf.convert_to_tensor([cf.GRID_INJECTION_PRICE])
@@ -64,7 +63,7 @@ class GridAgent(Agent):
         cost = (
                 (self._cost_avg
                  + self._cost_amplitude
-                 * tf.math.sin(state[0] * self._cost_frequency + self._cost_phase)
+                 * tf.math.sin(state[0] * self._cost_frequency - self._cost_phase)
                  ) / self._cost_normalization  # from c€ to €
         )
 
@@ -91,6 +90,15 @@ class ActingAgent(Agent, ABC):
         self.storage = storage
         self.heating = heating
 
+    @abstractmethod
+    def __call__(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]: ...
+
+    def step(self) -> None:
+        super(ActingAgent, self).step()
+        self.pv.step()
+        self.storage.step()
+        self.heating.step()
+
 
 class RuleAgent(ActingAgent):
 
@@ -104,6 +112,9 @@ class RuleAgent(ActingAgent):
         self.storage.reset()
         self.heating.reset()
 
+    def __call__(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
+        return self.take_decision(*args, **kwargs)
+
     def take_decision(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
 
         # Check temperature
@@ -112,13 +123,10 @@ class RuleAgent(ActingAgent):
         # Combine load with solar generation
         current_load, _ = next(self.load)
         current_pv, _ = self.pv.production
-        current_balance = current_load + current_pv
+        current_balance = current_load - current_pv
 
         # Combine balance with heating
         current_power = current_balance + self.heating.power
-
-        # Step through all times
-        self._step()
 
         # return resulting in/output to grid
         return current_power, tf.constant([0.])
@@ -154,72 +162,62 @@ class RuleAgent(ActingAgent):
     def _communicate(self) -> List:
         pass
 
-    def _step(self) -> None:
-        self.pv.step()
-        self.storage.step()
-        self.heating.step()
-        super(RuleAgent, self)._step()
 
+class RLAgent(ActingAgent):
 
-# TODO: inherit from tensorflow model
-class RLAgent(ActingAgent, ABC):
-
-    def __init__(self, controller: BackupController, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(RLAgent, self).__init__(*args, **kwargs)
-        self.backup = controller
-        self._layers: List
+        # self.backup = controller
 
+        self.actor = rl.ActorModel(0.1)
+        self.trainer = rl.Trainer(self.actor,
+                                  buffer_size=100000, batch_size=128,
+                                  gamma=0.95, tau=0.005,
+                                  optimizer=tf.optimizers.Adam(learning_rate=1e-5)
+        )
 
-class PrivateAgent(RLAgent, ABC):
+        self._current_balance: tf.Tensor = None
+        self._next_balance: tf.Tensor = None
+        self._current_state: tf.Tensor = None
+        self._action: tf.Tensor = None
+        self._price = tf.constant([0])
 
-    def __init__(self, load: List[float], *args, **kwargs):
-        super(PrivateAgent, self).__init__(*args, **kwargs)
-        self._base_load = load
+    def _get_balance(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        load, pv = next(self.load), self.pv.production
 
+        return tf.expand_dims(load[0] - pv[0], axis=0) / self.max_in,\
+               tf.expand_dims(load[1] - pv[1], axis=0) / self.max_in
 
-class GatewayAgent(RLAgent):
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
+        self._current_balance, self._next_balance = self._get_balance()
 
-    def __init__(self, agents: List[ActingAgent], *args, **kwargs):
-        super(GatewayAgent, self).__init__(*args, **kwargs)
-        self.agents = agents
+        self._current_state = tf.expand_dims(tf.concat([tf.expand_dims(state[0], axis=0),
+                                                        self.heating.temperature,
+                                                        self._current_balance], axis=0), axis=0)
 
-    def take_decision(self, **kwargs) -> List:
-        pass
+        self._action = self.actor(self._current_state)
+        self.heating.set_power(float(self._action[0]))
 
-    def _predict(self) -> List:
-        pass
+        p_out = self._current_balance * self.max_in + self.heating.power
+        return p_out, self._price
 
-    def _communicate(self) -> List:
-        pass
+    def take_decision(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
+        current_balance = self._get_balance()[0]
+        new_state = tf.expand_dims(tf.concat([tf.expand_dims(state[0], axis=0),
+                                              self.heating.temperature,
+                                              current_balance], axis=0), axis=0)
+        self.heating.set_power(float(self.actor.greedy_action(new_state)[0, :]))
+        return current_balance * self.max_in + self.heating.power, self._price
 
+    def train(self, reward: tf.Tensor, next_state: tf.Tensor) -> None:
+        self._save_memory(reward, next_state)
+        self.trainer.train()
 
-class BuildingAgent(PrivateAgent):
-
-    def __init__(self, load: List[float], production: Production, storage: Storage, heating: Heating,
-                 *args, **kwargs):
-        super(BuildingAgent, self).__init__(load, *args, controller=BuildingController(self), **kwargs)
-        self.production = production
-        self.storage = storage
-        self.heating = heating
-
-    def take_decision(self, **kwargs) -> List:
-        pass
-
-    def _predict(self) -> List:
-        pass
-
-    def _communicate(self) -> List:
-        pass
-
-
-class ChargingAgent(PrivateAgent):
-
-    def __init__(self, evs: List[EV], *args, **kwargs):
-        super(ChargingAgent, self).__init__(*args, load=[], controller=ChargingController(self), **kwargs)
-        self.evs = evs
-
-    def take_decision(self, **kwargs) -> List:
-        pass
+    def _save_memory(self, reward: tf.Tensor, next_state: tf.Tensor) -> None:
+        ns = tf.concat([tf.expand_dims(next_state[0], axis=0),
+                        self.heating.temperature,
+                        self._next_balance], axis=0)
+        self.trainer.buffer.add(self._current_state, self._action, reward, ns)
 
     def _predict(self) -> List:
         pass

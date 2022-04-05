@@ -1,46 +1,31 @@
-from typing import Union, Optional
+# Python Libraries
+from typing import Callable, Tuple, Deque
 
-import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 from tqdm import trange
 import matplotlib.pyplot as plt
+import pandas as pd
+
 from datetime import datetime
-from typing import Tuple, Deque
 import collections
 import statistics
 import random
 import gc
 from functools import reduce
 
+# Local modules
 import config as cf
-from config import DB_PATH, TIME_SLOT, MODELS_PATH, CENTS_PER_EURO, HOURS_PER_DAY
 import heating
-import database
-from database import get_connection, get_data
-
-MINUTES_PER_HOUR = 60
-
-"""
-Code adapted from
-https://github.com/tensorflow/agents/blob/v0.12.0/tf_agents/agents/ddpg/ddpg_agent.py
-https://pemami4911.github.io/blog/2016/08/21/ddpg-rl.html#References
-
-Other sources
-Target networks: https://www.nature.com/articles/nature14236.pdf
-DDPG: https://arxiv.org/pdf/1509.02971v2.pdf
-Test OU noise: https://rdrr.io/cran/goffda/man/r_ou.html
-
-"""
+import dataset as ds
 
 
-### Parameter setup ###
+# ------- Parameter setup ------- #
 seed = 42
 tf.random.set_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
-# env.seed(seed)
 
 # Small epsilon value for stabilizing division operations
 eps = np.finfo(np.float32).eps.item()
@@ -68,19 +53,40 @@ class ActorModel:
         self.actions = tf.convert_to_tensor([0, 0.5, 1])
         self._epsilon = epsilon
 
-    def __call__(self, state: tf.Tensor, network: keras.Model, greedy: bool = False) -> tf.Tensor:
+        self._q_network = QNetwork()
 
-        if not greedy and random.random() < self._epsilon:
+        self.action_selector: Callable[[tf.Tensor], tf.Tensor] = (
+            self.select_action if epsilon > 0
+            else self.greedy_action
+        )
+
+    @property
+    def q_network(self) -> QNetwork:
+        return self._q_network
+
+    def __call__(self, state: tf.Tensor) -> tf.Tensor:
+        return self.action_selector(state)
+
+    def select_action(self, state: tf.Tensor) -> tf.Tensor:
+        if random.random() < self._epsilon:
             # Explore
             action = tf.expand_dims(tf.gather(self.actions, np.random.choice([0, 1, 2], (state.shape[0]))), axis=-1)
         else:
-            # Compute Q-values and take best action
-            values = tf.TensorArray(dtype=tf.float32, size=self.actions.shape[0])
-            for i in range(self.actions.shape[0]):
-                values = values.write(i, network(state, tf.repeat(tf.expand_dims(self.actions[i], axis=0)[None, :],
-                                                                  state.shape[0], axis=0)))
+            # Exploit
+            action = self.greedy_action(state)
 
-            action = tf.gather(self.actions, tf.argmax(values.stack(), axis=0))
+        return action
+
+    def greedy_action(self, state: tf.Tensor) -> tf.Tensor:
+        # Compute Q-values for possible actions in the given state
+        values = tf.TensorArray(dtype=tf.float32, size=self.actions.shape[0])
+        for i in range(self.actions.shape[0]):
+            actions = tf.repeat(tf.expand_dims(self.actions[i], axis=0)[None, :],
+                                state.shape[0], axis=0)
+            values = values.write(i, self._q_network(state, actions))
+
+        # Select the best action
+        action = tf.gather(self.actions, tf.argmax(values.stack(), axis=0))
 
         return action
 
@@ -138,36 +144,35 @@ class ReplayBuffer:
 
 class Trainer:
 
-    def __init__(self, buffer_size: int, batch_size: int,
-                 gamma: float, epsilon: float, tau: float,
+    def __init__(self, actor: ActorModel,
+                 buffer_size: int, batch_size: int,
+                 gamma: float, tau: float,
                  optimizer: tf.optimizers.Optimizer):
         self._gamma = gamma
         self._tau = tau
 
-        self.actor = ActorModel(epsilon)
-
-        self.q_network = QNetwork()
-        self.target_q_network = QNetwork()
+        self.actor = actor
+        self.target_network = ActorModel(0)
 
         self.optimizer = optimizer
 
         self.buffer = ReplayBuffer(buffer_size, batch_size)
 
-        self._initialize_buffer()
-        self._initialize_target()
+        # self._initialize_buffer()
+        # self._initialize_target()
 
     def _initialize_buffer(self) -> None:
         while self.buffer.size() < 100:
-            self.buffer.add_batch(*run_episode(self.actor, self.q_network))
+            self.buffer.add_batch(*run_episode(self.actor))
 
     def _initialize_target(self) -> None:
         s, a, _, _ = self.buffer.sample_batch()
-        _ = self.target_q_network(s, a)
-        self._soft_update(self.q_network.trainable_weights, self.target_q_network.trainable_weights)
+        _ = self.target_network.q_network(s, a)
+        self._soft_update(self.actor.q_network.trainable_weights, self.target_network.q_network.trainable_weights)
 
     def train_episode(self) -> float:
 
-        states, actions, rewards, next_states = run_episode(self.actor, self.q_network)
+        states, actions, rewards, next_states = run_episode(self.actor)
 
         for i in range(states.shape[0]):
 
@@ -180,18 +185,24 @@ class Trainer:
 
         return float(tf.math.reduce_sum(rewards).numpy())
 
+    def train(self) -> None:
+        s, a, r, ns = self.buffer.sample_batch()
+
+        self._train(s, a, r, ns)
+        self.update_targets()
+
     @tf.function
     def _train(self, states: tf.Tensor, actions: tf.Tensor, rewards: tf.Tensor, next_states: tf.Tensor) -> None:
 
         with tf.GradientTape() as tape:
-            q_target = rewards + self._gamma * self.actor(next_states, self.target_q_network, greedy=True)
-            q_value = self.q_network(states, actions)
+            q_target = rewards + self._gamma * self.target_network(next_states)
+            q_value = self.actor.q_network(states, actions)
 
             loss = tf.math.reduce_mean(tf.math.squared_difference(q_target, q_value))
 
-        dl_dw = tape.gradient(loss, self.q_network.trainable_weights)
+        dl_dw = tape.gradient(loss, self.actor.q_network.trainable_weights)
 
-        self.optimizer.apply_gradients(zip(dl_dw, self.q_network.trainable_weights))
+        self.optimizer.apply_gradients(zip(dl_dw, self.actor.q_network.trainable_weights))
 
     def _soft_update(self, source_variables,
                      target_variables,
@@ -215,15 +226,37 @@ class Trainer:
         return tf.group(*updates, name=op_name)
 
     def update_targets(self) -> None:
-        self._soft_update(self.q_network.trainable_weights, self.target_q_network.trainable_weights, self._tau)
+        self._soft_update(self.actor.q_network.trainable_weights,
+                          self.target_network.q_network.trainable_weights,
+                          self._tau)
 
 
-### Prepare data ###
+# ------- Prepare data ------- #
 
-### Set up training procedure ###
+# Get data from database
+env_df, agent_df = ds.get_train_data()
 
-def run_episode(model: ActorModel,
-                q_network: QNetwork) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+# Calculate agent's electricity balance between load and pv generation
+env_df['balance'] = agent_df['l0'] * 0.7e3 - agent_df['pv'] * 4e3
+balance_max = env_df['balance'].max()
+env_df['balance'] = env_df['balance'] / balance_max
+
+# Generate prices
+env_df['price'] = (
+            (cf.GRID_COST_AVG
+             + cf.GRID_COST_AMPLITUDE
+             * np.sin(2 * np.pi * np.array(env_df['time']) * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD
+                      + cf.GRID_COST_PHASE)
+             ) / cf.CENTS_PER_EURO  # from c€ to €
+    )
+
+# Transform to dataset
+data = ds.dataframe_to_dataset(env_df)
+
+
+# ------- Set up training procedure ------- #
+
+def run_episode(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Runs a single episode to collect training data.
     """
@@ -240,7 +273,8 @@ def run_episode(model: ActorModel,
     cop = 3.
     max_power = 3e3
 
-    for t, ((state, next_state), p) in enumerate(zip(ds, price)):
+    for t, (state, next_state) in enumerate(data):
+        p = state[-1]
         t = int(t)
 
         # Extract outside temperature from state and put indoor temperature in
@@ -249,7 +283,7 @@ def run_episode(model: ActorModel,
         state = tf.convert_to_tensor(state)
 
         # Run the model and to get action probabilities and critic value
-        action = model(tf.expand_dims(state, axis=0), q_network)
+        action = model(tf.expand_dims(state, axis=0))
         scaled_action = action * max_power
 
         # Compute temperature evolution
@@ -300,7 +334,7 @@ def run_single_trial(trainer: Trainer) -> float:
     return training
 
 
-def test(model: ActorModel, q_network: QNetwork) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+def test(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Runs a single episode to test performance.
     """
@@ -317,7 +351,8 @@ def test(model: ActorModel, q_network: QNetwork) -> Tuple[tf.Tensor, tf.Tensor, 
     cop = 3.
     max_power = 3e3
 
-    for t, ((state, _), p) in enumerate(zip(ds, price)):
+    for t, (state, _) in enumerate(data):
+        p = state[-1]
         t = int(t)
 
         # Extract outside temperature from state and put indoor temperature in
@@ -326,7 +361,7 @@ def test(model: ActorModel, q_network: QNetwork) -> Tuple[tf.Tensor, tf.Tensor, 
         state = tf.convert_to_tensor(state)
 
         # Run the model and to get action probabilities and critic value
-        action = model(tf.expand_dims(state, axis=0), q_network)
+        action = model(tf.expand_dims(state, axis=0))
         scaled_action = action * max_power
 
         # Compute temperature evolution
@@ -352,7 +387,7 @@ def test(model: ActorModel, q_network: QNetwork) -> Tuple[tf.Tensor, tf.Tensor, 
     return states, actions, temperatures, costs
 
 
-### Set up training ###
+# ------- Set up training ------- #
 trials = 3
 min_episodes_criterion = 100
 starting_episodes = 0 * 1000
@@ -374,38 +409,46 @@ episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_crite
 
 if __name__ == '__main__':
 
-    data = np.array(train_df_1, dtype=np.float32)
-    ds = train_dataset = tf.data.Dataset.from_tensor_slices((data, np.roll(data, -1, axis=0)))
+    env_df, _ = ds.get_train_data()
+    env_ds = ds.dataframe_to_dataset(env_df)
 
-    dqn = Trainer(bu, bs, gamma, epsilon, tau,
-                  optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
+    price = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    for t, (state, _) in enumerate(env_ds):
+        price = price.write(t,
+                (cf.GRID_COST_AVG
+                 + cf.GRID_COST_AMPLITUDE
+                 * tf.math.sin(state[0] * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+                 ) / cf.CENTS_PER_EURO  # from c€ to €
+        )
 
-    run_single_trial(dqn)
-
-    s, a, temps, cost = test(dqn.actor, dqn.q_network)
-
-    print(f'Price paid: {cost.numpy().sum()}')
-
-    p_out = (s[:, -1] * balance_max + a)[:, 0] / 1e3
-
-    fig_1 = plt.figure(1)
-    plt.plot(np.arange(s.shape[0]),
-             s[:, -1] * balance_max / 1e3,
-             a[:, 0] / 1e3)
-    plt.plot(np.arange(s.shape[0]), (s[:, -1] * balance_max + a[:, 0]) / 1e3)
-
-    fig_2, ax1 = plt.subplots()
-
-    ax2 = ax1.twinx()
-    ax1.plot(np.arange(s.shape[0]), temps)
-    ax2.plot(np.arange(s.shape[0]), price, 'g-')
-
-    ax1.set_ylabel('Temperature [°C]')
-    ax2.set_ylabel('Price [€]', color='g')
-
-    fig_3 = plt.figure(3)
-    plt.plot(np.arange(s.shape[0]), cost)
-
+    price = price.stack()
+    print(price.shape)
+    # dqn = Trainer(ActorModel(epsilon),
+    #               bu, bs, gamma, tau,
+    #               optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
+    #
+    # run_single_trial(dqn)
+    #
+    # s, a, temps, cost = test(dqn.actor)
+    #
+    # p_out = (s[:, -1] * balance_max + a)[:, 0] / 1e3
+    #
+    # print(f'Price paid: {cost.numpy().sum() - 50 / 365 * max(2.5, p_out.numpy().max())}')
+    #
+    # fig_1 = plt.figure(1)
+    # plt.plot(np.arange(s.shape[0]),
+    #          s[:, -2] * balance_max / 1e3)
+    # plt.plot(np.arange(s.shape[0]), a[:, 0] / 1e3)
+    #
+    # fig_2, ax1 = plt.subplots()
+    # ax2 = ax1.twinx()
+    # ax1.plot(np.arange(s.shape[0]), temps)
+    # ax2.plot(np.arange(s.shape[0]), env_df['price'], 'g-')
+    #
+    # ax1.set_ylabel('Temperature [°C]')
+    # ax2.set_ylabel('Price [€]', color='g')
+    #
+    plt.plot(env_df['time'] * 24, price)
     plt.show()
 
     # for b, bs in enumerate([128]):
