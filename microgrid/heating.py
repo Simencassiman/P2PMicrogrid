@@ -74,6 +74,10 @@ class Heating(ElectricalAsset):
 
     @property
     @abstractmethod
+    def normalized_temperature(self) -> tf.Tensor: ...
+
+    @property
+    @abstractmethod
     def power(self) -> tf.Tensor:
         ...
 
@@ -92,7 +96,7 @@ class Heating(ElectricalAsset):
 
 class HPHeating(Heating):
 
-    TEMPERATURE_MARGIN = 1
+    TEMPERATURE_MARGIN = 1.
 
     def __init__(self, hp: HeatPump, temperature_setpoint: float):
         self.temperature_choice = (temperature_setpoint - self.TEMPERATURE_MARGIN,
@@ -104,7 +108,7 @@ class HPHeating(Heating):
 
         self._temperature_setpoint = temperature_setpoint
         self._t_building_mass: float = temperature_setpoint
-        self._t_indoor = temperature_setpoint
+        self._t_indoor = tf.constant([temperature_setpoint])
 
     @property
     def lower_bound(self) -> float:
@@ -116,7 +120,11 @@ class HPHeating(Heating):
 
     @property
     def temperature(self) -> tf.Tensor:
-        return tf.convert_to_tensor([self._t_indoor])
+        return self._t_indoor
+
+    @property
+    def normalized_temperature(self) -> tf.Tensor:
+        return (self._t_indoor - self._temperature_setpoint) / self.TEMPERATURE_MARGIN
 
     @property
     def power(self) -> tf.Tensor:
@@ -124,11 +132,9 @@ class HPHeating(Heating):
 
     def get_temperature(self) -> Tuple[tf.Tensor, tf.Tensor]:
         t_out = env.temperature
-        solar_rad = 0.      # env.get_irradiation(self._time)
 
         return temperature_simulation(t_out, self._t_indoor, self._t_building_mass,
-                                      self.power, self.hp.cop,
-                                      solar_rad)
+                                      self.power, self.hp.cop)
 
     def has_heater(self) -> bool:
         return True
@@ -137,17 +143,18 @@ class HPHeating(Heating):
         self.hp.power = power
 
     def step(self) -> None:
-        self._history.append(self._t_indoor)
+        self._history.append(float(self._t_indoor[0]))
         self._power_history.append(self.power)
         self._t_indoor, self._t_building_mass = self.get_temperature()
-        self._t_indoor = float(self._t_indoor[0])
+        self._t_indoor = self._t_indoor
         self._time += 1
 
     def reset(self) -> None:
         self._time = 0
         self._history = []
-        self._t_indoor = self._temperature_setpoint
-        self._t_building_mass = self._temperature_setpoint
+        self._power_history = []
+        self._t_indoor = tf.constant([self._temperature_setpoint])
+        self._t_building_mass = tf.constant([self._temperature_setpoint])
 
     def get_history(self) -> List[float]:
         return self._history

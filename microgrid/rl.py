@@ -1,19 +1,14 @@
 # Python Libraries
-from typing import Callable, Tuple, Deque
+from typing import Tuple, Deque
+import collections
+import statistics
+import random
 
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 from tqdm import trange
 import matplotlib.pyplot as plt
-import pandas as pd
-
-from datetime import datetime
-import collections
-import statistics
-import random
-import gc
-from functools import reduce
 
 # Local modules
 import config as cf
@@ -27,11 +22,74 @@ tf.random.set_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
 
+gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpu_devices[0], True)
+
+
 # Small epsilon value for stabilizing division operations
 eps = np.finfo(np.float32).eps.item()
 
 
-### Create models ###
+# ------- Create models ------- #
+class QActor:
+
+    def __init__(self, num_time_states: int, num_temperature_states: int, num_balance_states: int,
+                 num_actions: int = 3, gamma: float = 0.9,
+                 alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.99) -> None:
+
+        self._time_states = num_time_states
+        self._temp_states = num_temperature_states
+        self._balance_states = num_balance_states
+        self._num_actions = num_actions
+
+        self._epsilon = epsilon
+        self._decay = decay
+        self._gamma = gamma
+        self._alpha = alpha
+
+        self._q_table = np.zeros((num_time_states, num_temperature_states, num_balance_states, num_actions))
+
+    def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
+        time = max(min(int(state[0] * self._time_states), self._time_states - 1), 0)
+        temperature = max(min(int((state[1] + 1) / 2 * self._temp_states), self._temp_states), 0)
+        balance = max(min(int((state[2] + 1) / 2) * self._balance_states, self._balance_states), 0)
+
+        return time, temperature, balance
+
+    def select_action(self, state: tf.Tensor) -> Tuple[int, float]:
+        if np.random.rand() < self._epsilon:
+            # Explore
+            action, q = self.random_action(state)
+        else:
+            # Exploit
+            action, q = self.greedy_action(state)
+
+        return action, q
+
+    def random_action(self, *args) -> Tuple[int, float]:
+        return np.random.choice(self._num_actions), 0.
+
+    def greedy_action(self, state: tf.Tensor) -> Tuple[int, float]:
+        time, temperature, balance = self._get_state_indices(state.numpy())
+
+        action = self._q_table[time, temperature, balance, :].argmax()
+        return action, self._q_table[time, temperature, balance, action]
+
+    def train(self, state: tf.Tensor, action: int, reward: tf.Tensor, next_state: tf.Tensor) -> None:
+        time, temperature, balance = self._get_state_indices(state.numpy())
+        next_time, next_temperature, next_balance = self._get_state_indices(next_state.numpy())
+
+        q_max = self._q_table[next_time, next_temperature, next_balance, :].max()
+
+        self._q_table[time, temperature, balance, action] = (
+            self._q_table[time, temperature, balance, action]
+            + self._alpha * (reward.numpy() + self._gamma * q_max - self._q_table[time, temperature, balance, action])
+        )
+
+    def decay_exploration(self) -> None:
+        self._epsilon *= self._decay
+
+
 class QNetwork(keras.Model):
     def __init__(self):
         super(QNetwork, self).__init__()
@@ -50,46 +108,43 @@ class QNetwork(keras.Model):
 
 class ActorModel:
     def __init__(self, epsilon: float = 0.1):
-        self.actions = tf.convert_to_tensor([0, 0.5, 1])
+        self.actions = tf.convert_to_tensor([0., 0.5, 1.])
         self._epsilon = epsilon
 
         self._q_network = QNetwork()
-
-        self.action_selector: Callable[[tf.Tensor], tf.Tensor] = (
-            self.select_action if epsilon > 0
-            else self.greedy_action
-        )
 
     @property
     def q_network(self) -> QNetwork:
         return self._q_network
 
-    def __call__(self, state: tf.Tensor) -> tf.Tensor:
-        return self.action_selector(state)
+    def __call__(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
+        return self.select_action(state)
 
-    def select_action(self, state: tf.Tensor) -> tf.Tensor:
+    def select_action(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         if random.random() < self._epsilon:
             # Explore
-            action = tf.expand_dims(tf.gather(self.actions, np.random.choice([0, 1, 2], (state.shape[0]))), axis=-1)
+            action, q = self.random_action()
         else:
             # Exploit
-            action = self.greedy_action(state)
+            action, q = self.greedy_action(state)
 
-        return action
+        return action, q
 
-    def greedy_action(self, state: tf.Tensor) -> tf.Tensor:
+    def random_action(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        return tf.expand_dims(self.actions[np.random.choice([0, 1, 2])], axis=0), tf.constant([0.])
+
+    def greedy_action(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         # Compute Q-values for possible actions in the given state
-        values = tf.TensorArray(dtype=tf.float32, size=self.actions.shape[0])
-        for i in range(self.actions.shape[0]):
-            actions = tf.repeat(tf.expand_dims(self.actions[i], axis=0)[None, :],
-                                state.shape[0], axis=0)
-            values = values.write(i, self._q_network(state, actions))
+        q = self._q_network(tf.repeat(state, self.actions.shape[0], axis=0),
+                            tf.expand_dims(self.actions, axis=-1))
 
         # Select the best action
-        action = tf.gather(self.actions, tf.argmax(values.stack(), axis=0))
+        action = tf.expand_dims(self.actions[tf.argmax(q)[0]], axis=0)
 
-        return action
+        return action, q
 
+    def decay_exploration(self) -> None:
+        self._epsilon *= 0.95
 
 class ReplayBuffer:
 
@@ -148,27 +203,26 @@ class Trainer:
                  buffer_size: int, batch_size: int,
                  gamma: float, tau: float,
                  optimizer: tf.optimizers.Optimizer):
+        self._batch_size = batch_size
         self._gamma = gamma
         self._tau = tau
 
         self.actor = actor
-        self.target_network = ActorModel(0)
+        self.target_network = ActorModel().q_network
 
         self.optimizer = optimizer
 
         self.buffer = ReplayBuffer(buffer_size, batch_size)
 
-        # self._initialize_buffer()
-        # self._initialize_target()
-
     def _initialize_buffer(self) -> None:
         while self.buffer.size() < 100:
             self.buffer.add_batch(*run_episode(self.actor))
 
-    def _initialize_target(self) -> None:
+    def initialize_target(self) -> None:
         s, a, _, _ = self.buffer.sample_batch()
-        _ = self.target_network.q_network(s, a)
-        self._soft_update(self.actor.q_network.trainable_weights, self.target_network.q_network.trainable_weights)
+        _ = self.actor.q_network(s, a)
+        _ = self.target_network(s, a)
+        self._soft_update(self.actor.q_network.trainable_weights, self.target_network.trainable_weights)
 
     def train_episode(self) -> float:
 
@@ -185,24 +239,41 @@ class Trainer:
 
         return float(tf.math.reduce_sum(rewards).numpy())
 
-    def train(self) -> None:
+    def train(self) -> float:
         s, a, r, ns = self.buffer.sample_batch()
 
-        self._train(s, a, r, ns)
+        loss = self._train(s, a, r, ns)
         self.update_targets()
 
+        return loss
+
     @tf.function
-    def _train(self, states: tf.Tensor, actions: tf.Tensor, rewards: tf.Tensor, next_states: tf.Tensor) -> None:
+    def _train(self, states: tf.Tensor, actions: tf.Tensor, rewards: tf.Tensor, next_states: tf.Tensor) -> float:
 
         with tf.GradientTape() as tape:
-            q_target = rewards + self._gamma * self.target_network(next_states)
+            q_max = tf.math.reduce_max(tf.stack([
+                self.target_network(next_states,
+                                    tf.expand_dims(tf.repeat(self.actor.actions[0], self._batch_size, axis=0),
+                                                   axis=-1)),
+                self.target_network(next_states,
+                                    tf.expand_dims(tf.repeat(self.actor.actions[1], self._batch_size, axis=0),
+                                                   axis=-1)),
+                self.target_network(next_states,
+                                    tf.expand_dims(tf.repeat(self.actor.actions[2], self._batch_size, axis=0),
+                                                   axis=-1))],
+                axis=0), axis=0)
+
+            q_target = rewards + self._gamma * q_max
             q_value = self.actor.q_network(states, actions)
 
             loss = tf.math.reduce_mean(tf.math.squared_difference(q_target, q_value))
 
         dl_dw = tape.gradient(loss, self.actor.q_network.trainable_weights)
+        dl_dw[0] = tf.clip_by_value(dl_dw[0], -1., 1.)
 
         self.optimizer.apply_gradients(zip(dl_dw, self.actor.q_network.trainable_weights))
+
+        return float(loss)
 
     def _soft_update(self, source_variables,
                      target_variables,
@@ -227,7 +298,7 @@ class Trainer:
 
     def update_targets(self) -> None:
         self._soft_update(self.actor.q_network.trainable_weights,
-                          self.target_network.q_network.trainable_weights,
+                          self.target_network.trainable_weights,
                           self._tau)
 
 

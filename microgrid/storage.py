@@ -107,7 +107,8 @@ class NoStorage(Storage):
 
     def discharge(self, amount: float) -> None: ...
 
-    def step(self) -> None: ...
+    def step(self) -> None:
+        pass
 
     def reset(self) -> None: ...
 

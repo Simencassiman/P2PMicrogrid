@@ -1,11 +1,17 @@
 # Python Libraries
 from __future__ import annotations
+
+import collections
+import gc
+import statistics
 from typing import List, Tuple, Callable, Any
 import numpy as np
 from datetime import datetime
 
 import pandas as pd
 import tensorflow as tf
+from tqdm import trange
+import matplotlib.pyplot as plt
 
 # Local Modules
 from environment import env
@@ -52,9 +58,9 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
                                         Prosumer(PV(peak_power=pv_ratings[i] * 1e3,
                                                     production=agent_pv)),
                                         NoStorage(),
-                                        HPHeating(HeatPump(cop=3.0, max_power=3 * 1e3, power=0.0), 21.0),
-                                        max_in=max_power * safety,
-                                        max_out=-(max_power + safety)
+                                        HPHeating(HeatPump(cop=3.0, max_power=3 * 1e3, power=tf.constant([0.0])), 21.0),
+                                        max_in=max_power * safety * 1e3,
+                                        max_out=-(max_power + safety * 1e3)
         ))
 
     # Prepare environment
@@ -78,6 +84,7 @@ class CommunityMicrogrid:
         self.time_length = len(timeline)
         self.agents = agents
         self.grid = GridAgent()
+        self.q = np.zeros((len(env), len(agents), 3))
 
     def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
 
@@ -87,7 +94,7 @@ class CommunityMicrogrid:
 
         for time, (features, next_features) in enumerate(env.data):
             for i, agent in enumerate(self.agents):
-                p, _ = agent.take_decision(features)
+                p, _, self.q[time, i, :] = agent.take_decision(tf.expand_dims(features, axis=0))
                 power = power.write(time, p)
 
             buying_price[time], injection_price[time] = self.grid.take_decision(features)
@@ -103,29 +110,55 @@ class CommunityMicrogrid:
 
         return power, costs
 
-    def train_episode(self) -> None:
+    def init_buffers(self) -> None:
+        for _ in range(10):
+            for t, (state, next_state) in enumerate(env.data):
+                p_buy, p_inj = self.grid.take_decision(state)
+
+                for agent in self.agents:
+                    # Run the model and to get action probabilities and critic value
+                    action, _, _ = agent.explore(tf.expand_dims(state[:1], axis=0))
+
+                    # Compute reward
+                    r = agent.get_reward(action[0] / 1e3, p_buy, p_inj)
+
+                    agent.save_memory(r, tf.expand_dims(next_state, axis=0))
+
+                self._step()
+
+            # Reset iterators
+            for agent in self.agents:
+                agent.reset()
+
+        for agent in self.agents:
+            agent.trainer.initialize_target()
+
+    def train_episode(self) -> Tuple[float, float]:
+        rewards = np.zeros((len(env), len(self.agents)))
+        losses = np.zeros(rewards.shape)
+
         for t, (state, next_state) in enumerate(env.data):
             p_buy, p_inj = self.grid.take_decision(state)
 
-            for agent in self.agents:
+            for i, agent in enumerate(self.agents):
                 # Run the model and to get action probabilities and critic value
-                action: tf.Tensor = agent(tf.expand_dims(state[:1], axis=0))[0] / 1e3
-                t_in = agent.heating.temperature
-
-                if not isinstance(agent, RLAgent):
-                    continue
+                action, _, _ = agent(tf.expand_dims(state, axis=0))
 
                 # Compute reward
-                cost = tf.where(tf.math.greater(action, 0), action * p_buy, action * p_inj)
-                t_penalty = max(max(0., agent.heating.lower_bound - t_in), max(0., t_in - agent.heating.upper_bound))
-                t_penalty = tf.where(t_penalty > 0, t_penalty + 1, 0)
-                r = - (cost + 10 * t_penalty ** 2)
+                r = agent.get_reward(action[0] / 1e3, p_buy, p_inj)
 
-                agent.train(r, next_state)
+                # Save statistics
+                rewards[t, i] = r.numpy()
+                losses[t, i] = agent.train(r, tf.expand_dims(next_state, axis=0))
 
             self._step()
 
+        # Reset iterators
+        for agent in self.agents:
+            agent.reset()
+
         # print(f"Average reward: {sum(rewards) / len(rewards)}:")
+        return rewards.mean(axis=-1).sum(), losses.mean()
 
     def _step(self) -> None:
         for agent in self.agents:
@@ -142,14 +175,39 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
+max_episodes = 5 * 1000
+min_episodes_criterion = 100
+
+episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
+episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
+
+
 if __name__ == '__main__':
-    nr_agents = 2
+    nr_agents = 1
     start = datetime(2021, 11, 1)
     end = datetime(2021, 12, 1)
 
     community = get_rl_based_community(nr_agents)
 
+    community.init_buffers()
+
+    with trange(max_episodes) as episodes:
+        for episode in episodes:
+            reward, error = community.train_episode()
+            episodes_reward.append(reward)
+            episodes_error.append(error)
+
+            if episode % min_episodes_criterion == 0:
+                print(f'Average reward: {statistics.mean(episodes_reward):.3f}. '
+                      f'Average error: {statistics.mean(episodes_error):.3f}')
+
+                for agent in community.agents:
+                    agent.actor.decay_exploration()
+
     power, cost = community.run()
 
+    plt.figure(0)
+    plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
+    plt.legend(['0', '1', '2'])
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
