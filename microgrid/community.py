@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 # Local Modules
 from environment import env
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
-from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent
+from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent
 from production import Prosumer, Consumer, PV
 from storage import NoStorage
 from heating import HPHeating, HeatPump
@@ -74,7 +74,7 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
 
 def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(RLAgent, n_agents)
+    return get_community(QAgent, n_agents)
 
 
 class CommunityMicrogrid:
@@ -189,7 +189,7 @@ if __name__ == '__main__':
 
     community = get_rl_based_community(nr_agents)
 
-    community.init_buffers()
+    # community.init_buffers()
 
     with trange(max_episodes) as episodes:
         for episode in episodes:

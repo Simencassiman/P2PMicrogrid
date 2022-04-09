@@ -281,7 +281,7 @@ class QAgent(RLAgent):
         new_state = self._get_observation_state(state, current_balance)
 
         action, q = self.actor.greedy_action(new_state)
-        self.heating.set_power(float(action))
+        self.heating.set_power(self._actions[action])
 
         return current_balance * self.max_in + self.heating.power, self._price, q
 

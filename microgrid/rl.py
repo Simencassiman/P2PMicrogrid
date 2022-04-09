@@ -35,7 +35,7 @@ class QActor:
 
     def __init__(self, num_time_states: int, num_temperature_states: int, num_balance_states: int,
                  num_actions: int = 3, gamma: float = 0.9,
-                 alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.99) -> None:
+                 alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.95) -> None:
 
         self._time_states = num_time_states
         self._temp_states = num_temperature_states
@@ -50,9 +50,9 @@ class QActor:
         self._q_table = np.zeros((num_time_states, num_temperature_states, num_balance_states, num_actions))
 
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
-        time = max(min(int(state[0] * self._time_states), self._time_states - 1), 0)
-        temperature = max(min(int((state[1] + 1) / 2 * self._temp_states), self._temp_states), 0)
-        balance = max(min(int((state[2] + 1) / 2) * self._balance_states, self._balance_states), 0)
+        time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
+        temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
+        balance = max(min(int((state[0, 2] + 1) / 2) * self._balance_states, self._balance_states - 1), 0)
 
         return time, temperature, balance
 
@@ -109,7 +109,9 @@ class QNetwork(keras.Model):
 class ActorModel:
     def __init__(self, epsilon: float = 0.1):
         self.actions = tf.convert_to_tensor([0., 0.5, 1.])
+
         self._epsilon = epsilon
+        self._decay = 0.95
 
         self._q_network = QNetwork()
 
@@ -144,7 +146,7 @@ class ActorModel:
         return action, q
 
     def decay_exploration(self) -> None:
-        self._epsilon *= 0.95
+        self._epsilon *= self._decay
 
 class ReplayBuffer:
 
