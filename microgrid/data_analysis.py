@@ -14,32 +14,34 @@ from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
 from agent import ActingAgent
 
 
-def analyse_community_output(agents: List[ActingAgent], time: List[datetime], power: np.ndarray, cost: np.ndarray) -> None:
+def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
+                             power: np.ndarray, cost: np.ndarray) -> None:
 
     slots_per_day = int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY)
 
     nr_agents = len(agents)
     agent = agents[0]
     agent_ids = [a.id for a in agents]
-    pv: np.array = agent.production.pv.production
-    temperature = np.array(agent.heating._history)
-    battery = np.array(agent.storage._history)
+    pv: np.array = np.array(agent.pv.get_history())
+    temperature = np.array(agent.heating.get_history())
+    battery = np.array(agent.heating._power_history)
 
-    production = np.array(list(map(lambda a: a.production.pv.production, filter(lambda a: a.id < 4, agents))))\
+    production = np.array(list(map(lambda a: a.pv.get_history(), filter(lambda a: a.id < 4, agents))))\
                     .transpose()
     self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
 
     cost = cost.sum(axis=0)
-    fixed_cost = (0.25 * 0.2 * cost + 50 * np.maximum(2.5, power.max(axis=0) * 1e-3))
+    fixed_cost = (0.25 * 0.2 * cost + 50 / 365 * np.maximum(2.5, power.max(axis=0) * 1e-3))
     print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3} kWh')
-    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity')
+    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity. Total: {cost + fixed_cost} €')
 
     # Create plots
     nr_ticks_factor = 16
     time = time[:slots_per_day]
     time_ticks = np.arange(int(slots_per_day / nr_ticks_factor)) * nr_ticks_factor
-    time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
-    time = [t.isoformat() for t in time]
+    time_labels = [t for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    # time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
+    # time = [t.isoformat() for t in time]
 
     plt.figure(1)
     plt.plot(time[:slots_per_day], power[:slots_per_day, 0] * 1e-3)

@@ -1,44 +1,40 @@
+# Python Libraries
+from typing import List, Tuple, Union
+from functools import reduce
+import re
+from datetime import datetime, timedelta
+
 import pandas as pd
 import tensorflow as tf
-from tf_agents.replay_buffers.tf_uniform_replay_buffer import TFUniformReplayBuffer
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
-from typing import List, Union, Optional
-from functools import reduce
-
-from config import DB_PATH, TIME_SLOT, MINUTES_PER_HOUR
-from database import get_connection, get_data
 
 
-conn = get_connection(DB_PATH)
-start = datetime(2021, 11, 1)
-val_start = datetime(2021, 11, 7)
-val_end = datetime(2021, 11, 8)
-end = datetime(2021, 12, 1)
-df = get_data(conn, start, end)
+# Local modules
+import config as cf
+from config import TIME_SLOT, MINUTES_PER_HOUR, CENTS_PER_EURO, HOURS_PER_DAY
+import database as db
+from database import get_connection
 
 
-def compute_time_slot(time) -> int:
-    t = datetime.strptime(time, '%H:%M:%S')
+# Get a connection to the database
+conn = get_connection(cf.DB_PATH)
 
-    return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
+# Define data splits
+data_month = 9
+testing_days = [32]
+validation_days = [32]
+training_days = [d for d in range(1, 32) if d not in testing_days and d not in validation_days]
 
+start_day = min(min(testing_days), min(validation_days), min(training_days))
+end_day = max(max(testing_days), max(validation_days), max(training_days))
+start = datetime(2021, data_month, start_day)
+end = datetime(2021, data_month, start_day) + timedelta(days=1)
 
-df['time'] = df['time'].map(lambda t: compute_time_slot(t))
-df[['year', 'month', 'day']] = df['date'].str.split(pat='-', expand=True)
-df['time'] = df['time'] / 96.
-df['day'] = df['day'].astype(float) / 31.
-df['month'] = df['month'].astype(float) / 12.
-df['temperature'] = df['temperature'].astype(float) / df['temperature'].max().astype(float)
-df['l0'] = df['l0'].astype(float) / df['l0'].max().astype(float)
-df['pv'] = df['pv'].astype(float) / df['pv'].max().astype(float)
-df['date'] = df['date'].map(lambda t: datetime.strptime(t, '%Y-%m-%d'))
-
-cols = ['time', 'day', 'month', 'temperature', 'cloud_cover', 'humidity', 'l0', 'pv']
-train_df_1 = df[df['date'] < val_start][cols]
-train_df_2 = df[df['date'] > val_end][cols]
-val_df = df[(val_start <= df['date']) & (df['date'] <= val_end)][cols]
+# Define columns with relevant information, used to select from dataframe
+env_cols = ['time', 'temperature']
+agent_cols = ['l0', 'pv']
+cols = env_cols + agent_cols
 
 
 class WindowGenerator:
@@ -211,26 +207,91 @@ class WindowGenerator:
             f'Label column name(s): {self.label_columns}'])
 
 
+def compute_time_slot(time: str) -> int:
+    t = datetime.strptime(time, '%H:%M:%S')
+
+    return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
+
+
+def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+
+    # Extract and normalize timeslot
+    df['time'] = df['time'].map(lambda t: compute_time_slot(t))
+    df['time'] = df['time'] / 96.
+
+    # Normalize power
+    df['l0'] = (df['l0'].astype(float) / df['l0'].max().astype(float))
+    df['pv'] = (df['pv'].astype(float) / df['pv'].max().astype(float))
+
+    # Select relevant columns
+    new_df = df[cols]
+
+    # Add price for each timeslot
+    # new_df['price'] = (
+    #         (cf.GRID_COST_AVG
+    #          + cf.GRID_COST_AMPLITUDE
+    #          * np.sin(2 * np.pi * np.array(df['time'])
+    #                   * MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY / cf.GRID_COST_PERIOD + cf.GRID_COST_PHASE)
+    #          ) / CENTS_PER_EURO  # from c€ to €
+    # )
+
+    return new_df
+
+
+def get_data(days: List[int]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    # Get data from local database
+    df = db.get_data(conn, start, end)
+
+    # Only keep relevant days
+    df = df[df['date'].map(lambda d: int(re.match(r'.*-([0-9]+)$', d).groups()[0]) in days)]
+
+    # Process data to match observation data for RL agents
+    df = process_dataframe(df)
+
+    return df[env_cols], df[agent_cols]
+
+
+def get_train_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    return get_data(training_days)
+
+
+def get_validation_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    return get_data(validation_days)
+
+
+def get_test_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    return get_data(testing_days)
+
+
+def dataframe_to_dataset(df: pd.DataFrame, roll_len: int = -1, axis: int = 0) -> tf.data.Dataset:
+    data = np.array(df, dtype=np.float32)
+
+    ds = tf.data.Dataset.from_tensor_slices((data, np.roll(data, roll_len, axis=axis)))
+
+    return ds
+
+
+# def split_ds(in_features, t_features):
+#     in_features.set_shape([None, 3, None])
+#     t_features.set_shape([None, 3, None])
+#     inputs = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+#     targets = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+#
+#     horizon = 2
+#     for i in tf.range(in_features.shape[1] - horizon + 1):
+#         inputs = inputs.write(i, in_features[:, i:i + horizon, :])
+#         targets = targets.write(i, t_features[:, i:i + horizon, :])
+#
+#     ds = tf.data.Dataset.zip((
+#         tf.data.Dataset.from_tensor_slices(inputs.stack()),
+#         tf.data.Dataset.from_tensor_slices(targets.stack())
+#     ))
+#     return ds
+
+
 horizon = 3
 nr_input_features = 8
 nr_actions = 1
-
-def split_ds(in_features, t_features):
-    in_features.set_shape([None, 3, None])
-    t_features.set_shape([None, 3, None])
-    inputs = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    targets = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-
-    horizon = 2
-    for i in tf.range(in_features.shape[1] - horizon + 1):
-        inputs = inputs.write(i, in_features[:, i:i + horizon, :])
-        targets = targets.write(i, t_features[:, i:i + horizon, :])
-
-    ds = tf.data.Dataset.zip((
-        tf.data.Dataset.from_tensor_slices(inputs.stack()),
-        tf.data.Dataset.from_tensor_slices(targets.stack())
-    ))
-    return ds
 
 
 if __name__ == '__main__':
@@ -250,12 +311,6 @@ if __name__ == '__main__':
 
     batch_size = 4
     max_length = 5000
-
-    replay_buffer = TFUniformReplayBuffer(
-        data_spec,
-        batch_size=batch_size,
-        max_length=max_length
-    )
 
     for day in train_ds.take(1):
         states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
