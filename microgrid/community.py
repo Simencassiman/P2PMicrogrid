@@ -74,7 +74,7 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
 
 def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(QAgent, n_agents)
+    return get_community(RLAgent, n_agents)
 
 
 class CommunityMicrogrid:
@@ -175,7 +175,7 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-max_episodes = 5 * 1000
+max_episodes = 50 * 1000
 min_episodes_criterion = 100
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -189,7 +189,7 @@ if __name__ == '__main__':
 
     community = get_rl_based_community(nr_agents)
 
-    # community.init_buffers()
+    community.init_buffers()
 
     with trange(max_episodes) as episodes:
         for episode in episodes:

@@ -111,7 +111,7 @@ class ActorModel:
         self.actions = tf.convert_to_tensor([0., 0.5, 1.])
 
         self._epsilon = epsilon
-        self._decay = 0.95
+        self._decay = 0.995
 
         self._q_network = QNetwork()
 
