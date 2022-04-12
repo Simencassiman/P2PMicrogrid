@@ -1,26 +1,20 @@
-import pandas as pd
+# Python Libraries
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 from tqdm import trange
 import matplotlib.pyplot as plt
-from datetime import datetime
-from typing import Tuple, List, Deque
+from typing import Tuple, Deque
 import collections
 import statistics
 import random
-import gc
 
+# Local modules
 import config as cf
-from config import DB_PATH, TIME_SLOT, MODELS_PATH, CENTS_PER_EURO, HOURS_PER_DAY
-import database
-from database import get_connection, get_data
-import ml
-from ml import WindowGenerator
+from environment import env
 import heating
 import dataset as ds
 
-MINUTES_PER_HOUR = 60
 
 """
 Code adapted from
@@ -51,16 +45,34 @@ class ActorModel(keras.Model):
     def __init__(self) -> None:
         super(ActorModel, self).__init__()
 
+        self._epsilon = 1.
+        self._decay = 0.9
+
         self._layers = keras.Sequential([
             keras.layers.Dense(20, activation='relu'),
             keras.layers.Dense(20, activation='relu'),
-            keras.layers.Dense(1)
+            keras.layers.Dense(1, activation='sigmoid')
         ])
 
         self.concat = keras.layers.Concatenate()
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
         return self._layers(x)
+
+    def act(self, state: tf.Tensor) -> tf.Tensor:
+        if np.random.rand() < self._epsilon:
+            return self.random_action()
+        else:
+            return self.greedy_action(state)
+
+    def random_action(self, *args) -> tf.Tensor:
+        return tf.convert_to_tensor([[np.random.rand()]])
+
+    def greedy_action(self, state) -> tf.Tensor:
+        return self(state)
+
+    def decay_exploration(self) -> None:
+        self._epsilon *= self._decay
 
 
 class CriticModel(keras.Model):
@@ -155,12 +167,12 @@ class OrnsteinUhlenbeckActionNoise:
 
 class DDPG:
 
-    def __init__(self, buffer_size: int = 1000, batch_size: int = 32, gamma: float = 0.99,
-                 critic_loss: keras.losses.Loss = keras.losses.MeanSquaredError(),
-                 actor_loss:  keras.losses.Loss = keras.losses.MeanSquaredError(),
+    def __init__(self, buffer_size: int = 1000,
+                 batch_size: int = 32,
+                 gamma: float = 0.99,
                  critic_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4),
                  actor_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4),
-                 tau: float = 0.005, theta: float = 0.1, sigma: float = 0.1, sd: float = 0.2):
+                 tau: float = 0.005):
 
         self.actor = ActorModel()
         self.target_actor = ActorModel()
@@ -172,9 +184,8 @@ class DDPG:
         self.buffer = ReplayBuffer(buffer_size, self.batch_size)
 
         self._gamma = gamma
-        self.critic_loss = critic_loss
+
         self.critic_optimizer = critic_optimizer
-        self.actor_loss = actor_loss
         self.actor_optimizer = actor_optimizer
         self._tau = tau
 
@@ -182,27 +193,30 @@ class DDPG:
         self._initialize_target()
 
     def _initialize_buffer(self) -> None:
+        print("Initializing buffer")
         while self.buffer.count < 2000:
-            states, actions, rewards, next_states = run_episode(self.actor)
+            states, actions, rewards, next_states = run_episode(self.actor.random_action)
             self.buffer.add_batch(states, actions, rewards, next_states)
 
     def _initialize_target(self) -> None:
         s, a, _, _ = self.buffer.sample_batch()
-        _ = self.target_actor(a)
-        _ = self.target_critic([s, a])
+        _ = self.actor(s)
+        _ = self.target_actor(s)
+        _ = self.critic(s, a)
+        _ = self.target_critic(s, a)
 
         self._soft_update(self.actor.trainable_weights, self.target_actor.trainable_weights)
         self._soft_update(self.critic.trainable_weights, self.target_critic.trainable_weights)
 
     def predict(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         action = self.actor(state)
-        q_value = self.critic([state, action])
+        q_value = self.critic(state, action)
 
         return action, q_value
 
     def predict_target(self, state: tf.Tensor) -> tf.Tensor:
         action = self.target_actor(state)
-        q_value = self.target_critic([state, action])
+        q_value = self.target_critic(state, action)
 
         return q_value
 
@@ -226,9 +240,10 @@ class DDPG:
 
         return returns
 
-    def train_episode(self) -> float:
+    def train_episode(self) -> Tuple[float, float]:
         # Run the model for one episode to collect training data
-        states, actions, rewards, next_states = run_episode(self.actor)
+        states, actions, rewards, next_states = run_episode(self.actor, training=True)
+        q_values = self.critic(states, actions)
 
         # Calculate expected returns
         # returns = self.get_expected_return(rewards, tf.expand_dims(next_states[-1, :, :], axis=0))
@@ -247,7 +262,8 @@ class DDPG:
             self.update_targets()
 
         # Return performance for logging
-        return float(tf.math.reduce_sum(rewards))
+        return float(tf.math.reduce_sum(rewards)),\
+               float(tf.math.reduce_sum(tf.math.squared_difference(rewards, q_values)))
 
     @tf.function
     def update(self, state: tf.Tensor, action: tf.Tensor, reward: tf.Tensor, next_state: tf.Tensor) -> None:
@@ -258,7 +274,7 @@ class DDPG:
         # ---- Train Critic ---- #
         with tf.GradientTape() as tape:
             # Estimate q value
-            q = self.critic([state, action])
+            q = self.critic(state, action)
 
             # TD error
             y = reward + self._gamma * self.predict_target(next_state)
@@ -277,7 +293,7 @@ class DDPG:
         # Don't have associated reward for new actions, so can only train actor (and common part).
         with tf.GradientTape() as tape:
             action = self.actor(state)
-            q = -tf.math.reduce_mean(self.critic([state, action]))      # Negative of Q-value because
+            q = -tf.math.reduce_mean(self.critic(state, action))        # Negative of Q-value because
                                                                         # we want to improve the action
 
         # Compute the gradients from the loss
@@ -313,6 +329,152 @@ class DDPG:
         self._soft_update(self.critic.trainable_weights, self.target_critic.trainable_weights, self._tau)
 
 
+# ------- Set up training procedure ------- #
+
+def compute_reward(state: tf.Tensor, price: tf.Tensor, hp: heating.HPHeating) -> tf.Tensor:
+    p_out = (state[2] * balance_max + hp.power) / 1e3
+
+    cost = tf.where(p_out >= 0, p_out * price, p_out * 0.07)
+    t_penalty = max(max(0., hp.lower_bound - hp.temperature), max(0., hp.temperature - hp.upper_bound))
+    t_penalty = tf.where(t_penalty > 0, t_penalty + 1, 0)
+
+    r = - (cost + 50 * t_penalty)
+
+    return r
+
+
+def run_episode(model: ActorModel, training: bool = False) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+    """
+    Runs a single episode to collect training data.
+    """
+
+    states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    actions = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    rewards = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    next_states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+    # initial_state_shape = initial_state.shape
+    # state = initial_state
+    hp = heating.HPHeating(heating.HeatPump(3., 3e3, 0.), 21.)
+
+    for t, (state, next_state) in enumerate(env.data):
+        p = state[-1]
+        t = int(t)
+
+        # Extract outside temperature from state and put indoor temperature in
+        state = state.numpy()
+        t_out, state[1] = state[1], hp.normalized_temperature
+        state = tf.convert_to_tensor(state[:-1])
+
+        # Run the model and to get action probabilities and critic value
+        if training:
+            action = model.act(tf.expand_dims(state, axis=0))
+        else:
+            action = model(tf.expand_dims(state, axis=0))
+        hp.set_power(action)
+
+        # Compute temperature evolution
+        hp.step()
+
+        # Store state
+        states = states.write(t, state)
+        next_state = next_state.numpy()
+        next_state[1] = hp.normalized_temperature
+        next_states = next_states.write(t, tf.convert_to_tensor(next_state[:-1]))
+
+        # Store chosen action
+        actions = actions.write(t, action)
+
+        # Store reward
+        r = compute_reward(state, p, hp)
+        rewards = rewards.write(t, tf.expand_dims(tf.squeeze(r), axis=0))
+
+    states = states.stack()
+    actions = actions.concat()
+    rewards = rewards.concat()
+    next_states = next_states.stack()
+
+    return states, actions, rewards, next_states
+
+
+def run_single_trial(trainer: DDPG) -> float:
+    with trange(starting_episodes, max_episodes) as episodes:
+        for episode in episodes:
+
+            result, error = trainer.train_episode()
+
+            # Log progress
+            episodes_reward.append(result)
+            episodes_error.append(error)
+
+            # Show average episode reward every x episodes
+            if episode % min_episodes_criterion == 0:
+                trainer.actor.decay_exploration()
+
+                # Compute statistics
+                training = statistics.mean(episodes_reward)
+
+                # Report results
+                print(f'Episode {episode}: running reward: {training:.3f}, '
+                      f'average Q-error: {statistics.mean(episodes_error):.3f}')
+
+    return training
+
+
+def test(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+    """
+    Runs a single episode to test performance.
+    """
+
+    states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    actions = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    temperatures = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    costs = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    rewards = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+    # initial_state_shape = initial_state.shape
+    # state = initial_state
+    hp = heating.HPHeating(heating.HeatPump(3., 3e3, 0.), 21.)
+
+    for t, (state, _) in enumerate(env.data):
+        p = state[-1]
+        t = int(t)
+
+        # Extract outside temperature from state and put indoor temperature in
+        state = state.numpy()
+        t_out, state[1] = state[1], hp.normalized_temperature
+        state = tf.convert_to_tensor(state[:-1])
+
+        # Run the model and to get action probabilities and critic value
+        action = model(tf.expand_dims(state, axis=0))
+        hp.set_power(action[0, 0])
+
+        # Compute temperature evolution
+        hp.step()
+
+        # Store state
+        states = states.write(t, state)
+        temperatures = temperatures.write(t, hp.temperature)
+
+        # Store chosen action
+        actions = actions.write(t, hp.power)
+
+        # Calculate cost
+        p_out = (state[2] * balance_max + hp.power) / 1e3
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07)
+        costs = costs.write(t, cost)
+
+        rewards = rewards.write(t, compute_reward(state, p, hp))
+
+    states = states.stack()
+    actions = actions.concat()
+    temperatures = temperatures.concat()
+    costs = costs.concat()
+    rewards = rewards.stack()
+
+    return states, actions, temperatures, costs, rewards
+
+
 # ------- Prepare data ------- #
 
 # Get data from database
@@ -320,7 +482,7 @@ env_df, agent_df = ds.get_train_data()
 
 # Calculate agent's electricity balance between load and pv generation
 env_df['balance'] = agent_df['l0'] * 0.7e3 - agent_df['pv'] * 4e3
-balance_max = env_df['balance'].max()
+balance_max = (4e3 * 1.1)
 env_df['balance'] = env_df['balance'] / balance_max
 
 # Generate prices
@@ -336,201 +498,58 @@ env_df['price'] = (
 data = ds.dataframe_to_dataset(env_df)
 
 
-# ------- Set up training procedure ------- #
-
-def run_episode(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
-    """
-    Runs a single episode to collect training data.
-    """
-
-    states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    actions = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    rewards = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    next_states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-
-    # initial_state_shape = initial_state.shape
-    # state = initial_state
-    t_in = 21.0 + np.random.normal()
-    t_bm = 21.0 + np.random.normal()
-    cop = 3.
-    max_power = 3e3
-
-    for t, (state, next_state) in enumerate(data):
-        p = state[-1]
-        t = int(t)
-
-        # Extract outside temperature from state and put indoor temperature in
-        state = state.numpy()
-        t_out, state[1] = state[1], t_in
-        state = tf.convert_to_tensor(state)
-
-        # Run the model and to get action probabilities and critic value
-        action = model(tf.expand_dims(state, axis=0))
-        scaled_action = action * max_power
-
-        # Compute temperature evolution
-        t_in, t_bm = heating.temperature_simulation(t_out, t_in, t_bm, scaled_action, cop)
-
-        # Store state
-        states = states.write(t, state)
-        next_state = next_state.numpy()
-        next_state[1] = t_in
-        next_states = next_states.write(t, tf.convert_to_tensor(next_state))
-
-        # Store chosen action
-        actions = actions.write(t, action)
-
-        # Store reward
-        p_out = (state[2] + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07)
-        t_penalty = max(max(0., 20. - t_in), max(0., t_in - 22.))
-        t_penalty = tf.where(t_penalty > 0, t_penalty + 1, 0)
-        r = - (cost + 10 * t_penalty ** 2)
-        rewards = rewards.write(t, r)
-
-    states = states.stack()
-    actions = actions.concat()
-    rewards = rewards.concat()
-    next_states = next_states.stack()
-
-    return states, actions, rewards, next_states
-
-
-def run_single_trial(trainer: DDPG) -> float:
-    with trange(starting_episodes, max_episodes) as episodes:
-        for episode in episodes:
-
-            result = trainer.train_episode()
-
-            # Log progress
-            episodes_reward.append(result)
-
-            # Show average episode reward every x episodes
-            if episode % min_episodes_criterion == 0:
-                # Compute statistics
-                training = statistics.mean(episodes_reward)
-
-                # Report results
-                print(f'Episode {episode}: running reward: {training:.3f}')
-
-    return training
-
-
-def test(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
-    """
-    Runs a single episode to test performance.
-    """
-
-    states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    actions = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    temperatures = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    costs = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-
-    # initial_state_shape = initial_state.shape
-    # state = initial_state
-    t_in = 21.0
-    t_bm = 21.0
-    cop = 3.
-    max_power = 3e3
-
-    for t, (state, _) in enumerate(data):
-        p = state[-1]
-        t = int(t)
-
-        # Extract outside temperature from state and put indoor temperature in
-        state = state.numpy()
-        t_out, state[1] = state[1], t_in
-        state = tf.convert_to_tensor(state)
-
-        # Run the model and to get action probabilities and critic value
-        action = model(tf.expand_dims(state, axis=0))
-        scaled_action = action * max_power
-
-        # Compute temperature evolution
-        t_in, t_bm = heating.temperature_simulation(t_out, t_in, t_bm, scaled_action, cop)
-
-        # Store state
-        states = states.write(t, state)
-        temperatures = temperatures.write(t, t_in)
-
-        # Store chosen action
-        actions = actions.write(t, scaled_action)
-
-        # Calculate cost
-        p_out = (state[2] * balance_max + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07)
-        costs = costs.write(t, -cost)
-
-    states = states.stack()
-    actions = actions.concat()
-    temperatures = temperatures.concat()
-    costs = costs.concat()
-
-    return states, actions, temperatures, costs
-
-
 # ------- Set up training ------- #
 trials = 3
 min_episodes_criterion = 100
-starting_episodes = 0 * 1000
-max_episodes = 500
+starting_episodes = 0
+max_episodes = 2500
 # max_steps_per_episode = 1000
 
 mse_loss = tf.keras.losses.MeanSquaredError()
 
-bu = 100 * 1000
-bs = 128
-lr = 1e-5
+bu = 30 * 1000
+bs = 32
+lr = 1e-6
 gamma = 0.95
 tau = 0.005
-epsilon = 0.1
 
 # Keep last episodes reward
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
+episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 
 
 if __name__ == '__main__':
 
-    env_df, _ = ds.get_train_data()
-    env_ds = ds.dataframe_to_dataset(env_df)
+    env.setup(data)
 
-    price = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-    for t, (state, _) in enumerate(env_ds):
-        price = price.write(t,
-                (cf.GRID_COST_AVG
-                 + cf.GRID_COST_AMPLITUDE
-                 * tf.math.sin(state[0] * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-                 ) / cf.CENTS_PER_EURO  # from c€ to €
-        )
+    ddpg = DDPG(bu, bs, gamma, tau=tau,
+                actor_optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+                critic_optimizer=tf.keras.optimizers.Adam(learning_rate=lr * 2))
 
-    price = price.stack()
-    print(price.shape)
-    # dqn = Trainer(ActorModel(epsilon),
-    #               bu, bs, gamma, tau,
-    #               optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
-    #
-    # run_single_trial(dqn)
-    #
-    # s, a, temps, cost = test(dqn.actor)
-    #
-    # p_out = (s[:, -1] * balance_max + a)[:, 0] / 1e3
-    #
-    # print(f'Price paid: {cost.numpy().sum() - 50 / 365 * max(2.5, p_out.numpy().max())}')
-    #
-    # fig_1 = plt.figure(1)
-    # plt.plot(np.arange(s.shape[0]),
-    #          s[:, -2] * balance_max / 1e3)
-    # plt.plot(np.arange(s.shape[0]), a[:, 0] / 1e3)
-    #
-    # fig_2, ax1 = plt.subplots()
-    # ax2 = ax1.twinx()
-    # ax1.plot(np.arange(s.shape[0]), temps)
-    # ax2.plot(np.arange(s.shape[0]), env_df['price'], 'g-')
-    #
-    # ax1.set_ylabel('Temperature [°C]')
-    # ax2.set_ylabel('Price [€]', color='g')
-    #
-    plt.plot(env_df['time'] * 24, price)
+    run_single_trial(ddpg)
+
+    s, a, temps, cost, r = test(ddpg.actor)
+    q = ddpg.critic(s, tf.expand_dims(a, axis=-1))
+
+    p_out = (s[:, -1] * balance_max + a) / 1e3
+    print(f'Price paid: {cost.numpy().sum() + 50 / 365 * max(2.5, p_out.numpy().max())}')
+
+    fig_1 = plt.figure(1)
+    plt.plot(np.arange(s.shape[0]), env_df['balance'] * balance_max / 1e3, p_out)
+    plt.plot(np.arange(s.shape[0]), tf.squeeze(a) / 1e3)
+
+    fig_2, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    ax1.plot(np.arange(s.shape[0]), tf.squeeze(temps))
+    ax2.plot(np.arange(s.shape[0]), env_df['price'], 'g-')
+
+    ax1.set_ylabel('Temperature [°C]')
+    ax2.set_ylabel('Price [€]', color='g')
+
+    fig_3 = plt.figure(3)
+    plt.plot(np.arange(s.shape[0]), tf.squeeze(r), q)
+    plt.legend(['Reward', 'Q'])
+
     plt.show()
 
     # for b, bs in enumerate([128]):
