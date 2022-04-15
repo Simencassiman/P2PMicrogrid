@@ -19,7 +19,7 @@ import dataset as ds
     Simulator parameters
 """
 
-Ci = 2.44e6
+Ci = 2.44e6 * 2
 Cm = 9.4e7
 Ri = 8.64e-4
 Re = 1.05e-2

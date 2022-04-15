@@ -86,43 +86,101 @@ class CommunityMicrogrid:
         self.grid = GridAgent()
         self.q = np.zeros((len(env), len(agents), 3))
 
-    def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        self._rounds = 1
 
-        buying_price = np.zeros(len(env))
-        injection_price = np.zeros(len(env))
-        power = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    def _assign_powers(self, p2p_power: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
+        p_match = tf.where(tf.math.sign(p2p_power) != tf.math.sign(tf.transpose(p2p_power)),
+                           p2p_power + tf.transpose(p2p_power),
+                           0.)
+        exchange = tf.math.sign(p_match) * tf.math.minimum(tf.math.abs(p_match), tf.transpose(tf.math.abs(p_match)))
+
+        p_grid = tf.math.reduce_sum(p2p_power - exchange, axis=1)
+        p_p2p = tf.math.reduce_sum(exchange, axis=1)
+
+        return p_grid, p_p2p
+
+    def _compute_costs(self, grid_power: tf.Tensor, peer_power: tf.Tensor,
+                       buying_price: tf.Tensor, injection_price: tf.Tensor, p2p_price: tf.Tensor) -> tf.Tensor:
+        costs = (
+            tf.where(grid_power <= 0.,
+                     grid_power * buying_price[:, None],
+                     grid_power * injection_price[:, None])
+            + peer_power * p2p_price[:, None]
+        ) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
+
+        return costs
+
+    def _run(self, state: tf.Tensor,
+             training: bool = False) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        buying_price, injection_price = self.grid.take_decision(state)
+        p2p_price = (buying_price + injection_price) / 2
+        p2p_power = tf.zeros((len(self.agents), len(self.agents)))
+
+        power_exchanges = tf.TensorArray(dtype=tf.float32, size=len(self.agents), dynamic_size=False)
+
+        for r in range(self._rounds + 1):
+            p2p_power = p2p_power - tf.linalg.tensor_diag(tf.linalg.tensor_diag_part(p2p_power))
+
+            for i, agent in enumerate(self.agents):
+                if training:
+                    # Run the model and to get action probabilities and critic value
+                    action, _, _ = agent(tf.expand_dims(state, axis=0),
+                                         p2p_power[:, i])
+                else:
+                    action, _, q = agent.take_decision(tf.expand_dims(state, axis=0), p2p_power[:, i])
+                power_exchanges = power_exchanges.write(i, -action)
+
+            p2p_power = power_exchanges.stack()
+
+        p_grid, p_p2p = self._assign_powers(p2p_power)
+
+        return p_grid, p_p2p, buying_price, injection_price, p2p_price
+
+    def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        len_env = len(env)
+        buying_price = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        injection_price = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        p2p_price = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        grid_power = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        peer_power = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
 
         for time, (features, next_features) in enumerate(env.data):
-            for i, agent in enumerate(self.agents):
-                p, _, self.q[time, i, :] = agent.take_decision(tf.expand_dims(features, axis=0))
-                power = power.write(time, p)
 
-            buying_price[time], injection_price[time] = self.grid.take_decision(features)
+            power_grid, power_p2p, price_buy, price_inj, price_p2p = self._run(features)
+
+            grid_power = grid_power.write(time, power_grid)
+            peer_power = peer_power.write(time, power_p2p)
+            buying_price = buying_price.write(time, price_buy)
+            injection_price = injection_price.write(time, price_inj)
+            p2p_price = p2p_price.write(time, price_p2p)
 
             self._step()
 
-        power = power.stack()
+        grid_power = grid_power.stack()
+        peer_power = peer_power.stack()
 
-        costs = tf.math.reduce_sum(tf.where(power >= 0,
-                                            power * buying_price[:, None],
-                                            power * injection_price[:, None]), axis=0) \
-                * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
+        costs = tf.math.reduce_sum(self._compute_costs(grid_power, peer_power,
+                                                       buying_price.concat(),
+                                                       injection_price.concat(),
+                                                       p2p_price.concat()),
+                                   axis=0)
 
-        return power, costs
+        return -(grid_power + peer_power), -costs
 
     def init_buffers(self) -> None:
-        for _ in range(10):
+        for _ in range(1):
             for t, (state, next_state) in enumerate(env.data):
-                p_buy, p_inj = self.grid.take_decision(state)
 
-                for agent in self.agents:
-                    # Run the model and to get action probabilities and critic value
-                    action, _, _ = agent.explore(tf.expand_dims(state[:1], axis=0))
+                power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(state, training=True)
 
+                costs = tf.squeeze(self._compute_costs(power_grid, power_p2p, tf.expand_dims(p_buy, axis=0),
+                                                       tf.expand_dims(p_inj, axis=0), tf.expand_dims(p_p2p, axis=0)))
+
+                for i, agent in enumerate(self.agents):
                     # Compute reward
-                    r = agent.get_reward(action[0] / 1e3, p_buy, p_inj)
+                    r = agent.get_reward(costs[i])
 
-                    agent.save_memory(r, tf.expand_dims(next_state, axis=0))
+                    agent.save_memory(r, tf.expand_dims(next_state, axis=0), tf.zeros(len(self.agents)))
 
                 self._step()
 
@@ -133,23 +191,26 @@ class CommunityMicrogrid:
         for agent in self.agents:
             agent.trainer.initialize_target()
 
-    def train_episode(self) -> Tuple[float, float]:
-        rewards = np.zeros((len(env), len(self.agents)))
-        losses = np.zeros(rewards.shape)
-
+    def train_episode(self, all_rewards: tf.TensorArray, all_losses: tf.TensorArray,
+                      _rewards: tf.TensorArray, _losses: tf.TensorArray) -> Tuple[float, float]:
         for t, (state, next_state) in enumerate(env.data):
-            p_buy, p_inj = self.grid.take_decision(state)
+
+            power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(state, training=True)
+
+            costs = tf.squeeze(self._compute_costs(power_grid, power_p2p, tf.expand_dims(p_buy, axis=0),
+                                                   tf.expand_dims(p_inj, axis=0), tf.expand_dims(p_p2p, axis=0)))
 
             for i, agent in enumerate(self.agents):
-                # Run the model and to get action probabilities and critic value
-                action, _, _ = agent(tf.expand_dims(state, axis=0))
-
                 # Compute reward
-                r = agent.get_reward(action[0] / 1e3, p_buy, p_inj)
+                r = agent.get_reward(costs[i])
+                l = agent.train(r, tf.expand_dims(next_state, axis=0), tf.zeros(len(self.agents)))
 
                 # Save statistics
-                rewards[t, i] = r.numpy()
-                losses[t, i] = agent.train(r, tf.expand_dims(next_state, axis=0))
+                _rewards = _rewards.write(i, r)
+                _losses = _losses.write(i, l)
+
+            all_rewards = all_rewards.write(t, _rewards.concat())
+            all_losses = all_losses.write(t, _losses.concat())
 
             self._step()
 
@@ -157,16 +218,19 @@ class CommunityMicrogrid:
         for agent in self.agents:
             agent.reset()
 
-        # print(f"Average reward: {sum(rewards) / len(rewards)}:")
-        return rewards.mean(axis=-1).sum(), losses.mean()
+        all_rewards = all_rewards.stack()
+        all_losses = all_losses.stack()
+
+        avg_reward = float(tf.math.reduce_sum(tf.math.reduce_mean(all_rewards, axis=-1)))
+        avg_loss = float(tf.math.reduce_mean(all_losses))
+
+        return avg_reward, avg_loss
 
     def _step(self) -> None:
         for agent in self.agents:
             agent.step()
-        self.grid.step()
 
-    def _iterate(self) -> None:
-        pass
+        self.grid.step()
 
     def reset(self) -> None:
         for agent in self.agents:
@@ -175,25 +239,27 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-max_episodes = 50 * 1000
-min_episodes_criterion = 100
+def main() -> None:
+    nr_agents = 3
 
-episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
-episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
-
-
-if __name__ == '__main__':
-    nr_agents = 1
-    start = datetime(2021, 11, 1)
-    end = datetime(2021, 12, 1)
-
+    print("Creating community...")
     community = get_rl_based_community(nr_agents)
 
+    env_len = len(env)
+    agents_len = len(community.agents)
+    rewards = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
+    losses = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
+    _rewards = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
+    _losses = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
+
+    print("Initializing buffers...")
     community.init_buffers()
 
+    print("Training...")
     with trange(max_episodes) as episodes:
         for episode in episodes:
-            reward, error = community.train_episode()
+            reward, error = community.train_episode(rewards, losses, _rewards, _losses)
+
             episodes_reward.append(reward)
             episodes_error.append(error)
 
@@ -204,10 +270,23 @@ if __name__ == '__main__':
                 for agent in community.agents:
                     agent.actor.decay_exploration()
 
+    print("Running...")
     power, cost = community.run()
 
-    plt.figure(0)
-    plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
-    plt.legend(['0', '1', '2'])
+    print("Analysing...")
+    # plt.figure(0)
+    # plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
+    # plt.legend(['0', '1', '2'])
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+
+
+max_episodes = 2 * 1000
+min_episodes_criterion = 100
+
+episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
+episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
+
+
+if __name__ == '__main__':
+    main()
 

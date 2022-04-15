@@ -238,6 +238,10 @@ def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return new_df
 
 
+def get_data_from_csv() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    return pd.read_csv('data_env.csv', index_col=0), pd.read_csv('data_agent.csv', index_col=0)
+
+
 def get_data(days: List[int]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Get data from local database
     df = db.get_data(conn, start, end)
@@ -295,44 +299,8 @@ nr_actions = 1
 
 
 if __name__ == '__main__':
-    train_ds = WindowGenerator(df=[train_df_1, train_df_2],
-                               input_width=horizon, label_width=horizon,
-                               label_columns=list(val_df.columns)).days
-    validation_ds = WindowGenerator(df=train_df_1,
-                                    input_width=horizon, label_width=horizon,
-                                    label_columns=list(val_df.columns)).test_ds
+    env_df, aget_df = get_train_data()
+    print(env_df.head())
 
-    data_spec = (
-        tf.TensorSpec([horizon, nr_input_features], tf.float32, 'state'),
-        tf.TensorSpec([horizon, nr_actions], tf.float32, 'action'),
-        tf.TensorSpec([1], tf.float32, 'reward'),
-        tf.TensorSpec([horizon, nr_input_features], tf.float32, 'next_state')
-    )
-
-    batch_size = 4
-    max_length = 5000
-
-    for day in train_ds.take(1):
-        states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        actions = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        rewards = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        next_states = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-
-        for t, (x, y) in enumerate(day.take(4)):
-            print(x)
-            states = states.write(t, x)
-            actions = actions.write(t, x[:, :, -1:])
-            rewards = rewards.write(t, tf.expand_dims(tf.math.reduce_sum(x[:, :, -1] - y[:, :, -1], axis=-1), axis=0))
-            next_states = next_states.write(t, y)
-
-        replay_buffer.add_batch((
-            states.concat(),
-            actions.concat(),
-            rewards.concat(),
-            next_states.concat()
-        ))
-
-    for i in range(3):
-        print('-----')
-        for (s, a, r, ns), _ in iter(replay_buffer.as_dataset(sample_batch_size=2).take(2)):
-            print(s)
+    env_df.to_csv('../data/data_env.csv')
+    aget_df.to_csv('../data/data_agent.csv')

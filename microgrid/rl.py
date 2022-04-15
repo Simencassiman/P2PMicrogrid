@@ -95,8 +95,8 @@ class QNetwork(keras.Model):
         super(QNetwork, self).__init__()
 
         self._layers = keras.Sequential([
-            keras.layers.Dense(20, activation='relu'),
-            keras.layers.Dense(20, activation='relu'),
+            keras.layers.Dense(64, activation='relu'),
+            keras.layers.Dense(64, activation='relu'),
             keras.layers.Dense(1)
         ])
 
@@ -111,7 +111,7 @@ class ActorModel:
         self.actions = tf.convert_to_tensor([0., 0.5, 1.])
 
         self._epsilon = epsilon
-        self._decay = 0.995
+        self._decay = 0.9
 
         self._q_network = QNetwork()
 
@@ -147,6 +147,7 @@ class ActorModel:
 
     def decay_exploration(self) -> None:
         self._epsilon *= self._decay
+
 
 class ReplayBuffer:
 
@@ -304,29 +305,6 @@ class Trainer:
                           self._tau)
 
 
-# ------- Prepare data ------- #
-
-# Get data from database
-env_df, agent_df = ds.get_train_data()
-
-# Calculate agent's electricity balance between load and pv generation
-env_df['balance'] = agent_df['l0'] * 0.7e3 - agent_df['pv'] * 4e3
-balance_max = env_df['balance'].max()
-env_df['balance'] = env_df['balance'] / balance_max
-
-# Generate prices
-env_df['price'] = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(2 * np.pi * np.array(env_df['time']) * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD
-                      + cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
-    )
-
-# Transform to dataset
-data = ds.dataframe_to_dataset(env_df)
-
-
 # ------- Set up training procedure ------- #
 
 def run_episode(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
@@ -373,7 +351,7 @@ def run_episode(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.
 
         # Store reward
         p_out = (state[2] + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07)
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * cf.TIME_SLOT / cf.MINUTES_PER_HOUR
         t_penalty = max(max(0., 20. - t_in), max(0., t_in - 22.))
         t_penalty = tf.where(t_penalty > 0, t_penalty + 1, 0)
         r = - (cost + 10 * t_penalty ** 2)
@@ -449,7 +427,7 @@ def test(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]
 
         # Calculate cost
         p_out = (state[2] * balance_max + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07)
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * cf.TIME_SLOT / cf.MINUTES_PER_HOUR
         costs = costs.write(t, -cost)
 
     states = states.stack()
@@ -481,6 +459,28 @@ episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_crite
 
 
 if __name__ == '__main__':
+
+    # ------- Prepare data ------- #
+
+    # Get data from database
+    env_df, agent_df = ds.get_train_data()
+
+    # Calculate agent's electricity balance between load and pv generation
+    env_df['balance'] = agent_df['l0'] * 0.7e3 - agent_df['pv'] * 4e3
+    balance_max = env_df['balance'].max()
+    env_df['balance'] = env_df['balance'] / balance_max
+
+    # Generate prices
+    env_df['price'] = (
+            (cf.GRID_COST_AVG
+             + cf.GRID_COST_AMPLITUDE
+             * np.sin(2 * np.pi * np.array(env_df['time']) * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD
+                      + cf.GRID_COST_PHASE)
+             ) / cf.CENTS_PER_EURO  # from c€ to €
+    )
+
+    # Transform to dataset
+    data = ds.dataframe_to_dataset(env_df)
 
     env_df, _ = ds.get_train_data()
     env_ds = ds.dataframe_to_dataset(env_df)

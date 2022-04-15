@@ -18,71 +18,79 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
                              power: np.ndarray, cost: np.ndarray) -> None:
 
     slots_per_day = int(MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY)
-
-    nr_agents = len(agents)
-    agent = agents[0]
     agent_ids = [a.id for a in agents]
-    pv: np.array = np.array(agent.pv.get_history())
-    temperature = np.array(agent.heating.get_history())
-    battery = np.array(agent.heating._power_history)
 
-    production = np.array(list(map(lambda a: a.pv.get_history(), filter(lambda a: a.id < 4, agents))))\
-                    .transpose()
-    self_consumption = (power[:, :4] < 0) * (production + power[:, :4]) + (power[:, :4] >= 0) * production
+    production = np.array(list(map(lambda a: a.pv.get_history(), agents))).transpose()
+    self_consumption = (power < 0) * (production + power) + (power >= 0) * production
 
-    cost = cost.sum(axis=0)
-    fixed_cost = (0.25 * 0.2 * cost + 50 / 365 * np.maximum(2.5, power.max(axis=0) * 1e-3))
     print(f'Energy consumed: {power.sum(axis=0) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3} kWh')
-    print(f'Cost a total of: {cost} € volume and {fixed_cost} € capacity. Total: {cost + fixed_cost} €')
+    print(f'Cost a total of: {cost} €')
 
     # Create plots
     nr_ticks_factor = 16
     time = time[:slots_per_day]
     time_ticks = np.arange(int(slots_per_day / nr_ticks_factor)) * nr_ticks_factor
     time_labels = [t for i, t in enumerate(time) if i % nr_ticks_factor == 0]
-    # time_labels = [t.strftime('%H:%M') for i, t in enumerate(time) if i % nr_ticks_factor == 0]
-    # time = [t.isoformat() for t in time]
-
-    plt.figure(1)
-    plt.plot(time[:slots_per_day], power[:slots_per_day, 0] * 1e-3)
-    plt.plot(time[:slots_per_day], pv[:slots_per_day] * 1e-3)
-    plt.xticks(time_ticks, time_labels)
-    plt.title("Agent profiles")
-    plt.xlabel("Time")
-    plt.ylabel("Power [kW]")
-    plt.legend(['Loads', 'PV'])
-
-    plt.figure(2)
     width = 0.35  # the width of the bars: can also be len(x) sequence
 
-    plt.figure(2)
-    plt.bar(agent_ids, cost, width, label='Volume')
-    plt.bar(agent_ids, fixed_cost, width, bottom=cost, label='Capacity')
+    plot_costs(agent_ids, cost, width)
+
+    plot_selfconsumption(agent_ids, self_consumption, production, width)
+
+    plot_grid_load(power)
+
+    for i, agent in enumerate(agents):
+
+        pv: np.array = np.array(agent.pv.get_history())
+        temperature = np.array(agent.heating.get_history())
+        hp = np.array(agent.heating._power_history)
+
+        plt.figure(3*i + 4)
+        plt.plot(time[:slots_per_day], power[:slots_per_day, i] * 1e-3)
+        plt.plot(time[:slots_per_day], pv[:slots_per_day] * 1e-3)
+        plt.xticks(time_ticks, time_labels)
+        plt.title(f"Agent profiles (agent {i})")
+        plt.xlabel("Time")
+        plt.ylabel("Power [kW]")
+        plt.legend(['Loads', 'PV'])
+
+        plt.figure(3*i + 5)
+        plt.plot(time[:slots_per_day], temperature[:slots_per_day])
+        plt.xticks(time_ticks, time_labels)
+        plt.title(f"Indoor temperature (agent {i})")
+        plt.xlabel("Time")
+        plt.ylabel("Temperature [°C]")
+
+        plt.figure(3*i + 6)
+        plt.plot(time[:slots_per_day], hp[:slots_per_day] * 100)
+        plt.xticks(time_ticks, time_labels)
+        plt.title(f"Heat Pump Power (agent {i})")
+        plt.xlabel("Time")
+        plt.ylabel("Power [W]")
+
+    # Show all figures
+    plt.show()
+
+
+def plot_costs(agent_ids: List, costs: np.ndarray, width: float) -> None:
+    plt.figure()
+    plt.bar(agent_ids, costs, width, label='Volume')
     plt.title("Electricity costs")
+    plt.xticks(agent_ids, agent_ids)
     plt.xlabel("Agent")
     plt.ylabel("Cost [€]")
     plt.legend()
 
-    plt.figure(3)
-    plt.plot(time[:slots_per_day], temperature[:slots_per_day])
-    plt.xticks(time_ticks, time_labels)
-    plt.title("Indoor temperature")
-    plt.xlabel("Time")
-    plt.ylabel("Temperature [°C]")
-
-    plt.figure(4)
-    plt.plot(time[:slots_per_day], battery[:slots_per_day] * 100)
-    plt.xticks(time_ticks, time_labels)
-    plt.title("Battery SOC")
-    plt.xlabel("Time")
-    plt.ylabel("SOC [%]")
-
-    plt.figure(5)
-    plt.bar(agent_ids[:4], self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)
+def plot_selfconsumption(agent_ids: List, self_consumption: np.ndarray, production: np.ndarray, width: float) -> None:
+    plt.figure()
+    plt.bar(agent_ids, self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)
+    plt.xticks(agent_ids, agent_ids)
     plt.title("Self consumption")
     plt.xlabel("Agent")
     plt.ylabel("%")
 
+
+def plot_grid_load(power: np.ndarray) -> None:
     fig, ax = plt.subplots()
     grid_power = power.sum(axis=1).reshape((-1, 96))
     ygrid, xgrid = map(lambda s: np.arange(s + 1) + 1, grid_power.shape)
@@ -122,9 +130,6 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
     fig.suptitle("Grid load", fontsize=20, y=0.95)
     # Set legend label
     cb.set_label("Power [kW]", size=12)
-
-    # Show all figures
-    plt.show()
 
 
 def show_raw_load(path='data/data.json'):
