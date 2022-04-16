@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import collections
-import gc
 import statistics
 from typing import List, Tuple, Callable, Any
 import numpy as np
-from datetime import datetime
 
 import pandas as pd
 import tensorflow as tf
@@ -17,7 +15,7 @@ import matplotlib.pyplot as plt
 from environment import env
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
 from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent
-from production import Prosumer, Consumer, PV
+from production import Prosumer, PV
 from storage import NoStorage
 from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
@@ -51,7 +49,7 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
         max_power = max(load_ratings[i], pv_ratings[i])
         safety = 1.1
 
-        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * (load_ratings[i] if i < 3 else load_ratings[0]) * 1e3)
+        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * load_ratings[i] * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * pv_ratings[i] * 1e3)
 
         agents.append(agent_constructor(agent_load,
@@ -74,7 +72,7 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
 
 def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(RLAgent, n_agents)
+    return get_community(QAgent, n_agents)
 
 
 class CommunityMicrogrid:
@@ -240,7 +238,7 @@ class CommunityMicrogrid:
 
 
 def main() -> None:
-    nr_agents = 3
+    nr_agents = 2
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -252,8 +250,8 @@ def main() -> None:
     _rewards = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
     _losses = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
 
-    print("Initializing buffers...")
-    community.init_buffers()
+    # print("Initializing buffers...")
+    # community.init_buffers()
 
     print("Training...")
     with trange(max_episodes) as episodes:
@@ -271,6 +269,13 @@ def main() -> None:
                     agent.actor.decay_exploration()
 
     print("Running...")
+    env_df, agent_df = ds.get_validation_data()
+    env.setup(ds.dataframe_to_dataset(env_df))
+    for agent in community.agents:
+        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
+        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
+        agent.set_profiles(agent_load, agent_pv)
+    
     power, cost = community.run()
 
     print("Analysing...")
@@ -280,7 +285,7 @@ def main() -> None:
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-max_episodes = 2 * 1000
+max_episodes = 500
 min_episodes_criterion = 100
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)

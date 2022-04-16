@@ -22,14 +22,14 @@ conn = get_connection(cf.DB_PATH)
 
 # Define data splits
 data_month = 9
-testing_days = [32]
-validation_days = [32]
-training_days = [d for d in range(1, 32) if d not in testing_days and d not in validation_days]
+testing_days = [10]
+validation_days = [18]
+training_days = list(range(11, 18))
 
 start_day = min(min(testing_days), min(validation_days), min(training_days))
 end_day = max(max(testing_days), max(validation_days), max(training_days))
 start = datetime(2021, data_month, start_day)
-end = datetime(2021, data_month, start_day) + timedelta(days=1)
+end = datetime(2021, data_month, end_day) + timedelta(days=1)   # Last day is not included, so add 1 day
 
 # Define columns with relevant information, used to select from dataframe
 env_cols = ['time', 'temperature']
@@ -299,8 +299,8 @@ nr_actions = 1
 
 
 if __name__ == '__main__':
-    env_df, aget_df = get_train_data()
+    env_df, aget_df = get_validation_data()
     print(env_df.head())
 
-    env_df.to_csv('../data/data_env.csv')
-    aget_df.to_csv('../data/data_agent.csv')
+    env_df.to_csv('../data/data_env_validation.csv')
+    aget_df.to_csv('../data/data_agent_validation.csv')
