@@ -130,6 +130,21 @@ def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], t
 
         con.commit()
 
+        cursor.close()
+
+
+def log_training_progress(con: sqlite3.Connection,
+                          setting: str, agent_type: str, episode: int, reward: float, error: float) -> None:
+    if con is not None:
+        cursor = con.cursor()
+        query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
+
+        cursor.execute(query, (setting, agent_type, episode, reward, error))
+
+        con.commit()
+
+        cursor.close()
+
 
 if __name__ == '__main__':
 

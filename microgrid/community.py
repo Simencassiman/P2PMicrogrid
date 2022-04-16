@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import sqlite3
 import statistics
 from typing import List, Tuple, Callable, Any
 import numpy as np
@@ -14,12 +15,13 @@ import matplotlib.pyplot as plt
 # Local Modules
 from environment import env
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
-from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent
+from agent import Agent, ActingAgent, GridAgent, RuleAgent, QAgent
 from production import Prosumer, PV
 from storage import NoStorage
 from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
 import dataset as ds
+import database as db
 
 
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int) -> CommunityMicrogrid:
@@ -122,10 +124,9 @@ class CommunityMicrogrid:
             for i, agent in enumerate(self.agents):
                 if training:
                     # Run the model and to get action probabilities and critic value
-                    action, _, _ = agent(tf.expand_dims(state, axis=0),
-                                         p2p_power[:, i])
+                    action, _ = agent(tf.expand_dims(state, axis=0), p2p_power[:, i])
                 else:
-                    action, _, q = agent.take_decision(tf.expand_dims(state, axis=0), p2p_power[:, i])
+                    action, q = agent.take_decision(tf.expand_dims(state, axis=0), p2p_power[:, i])
                 power_exchanges = power_exchanges.write(i, -action)
 
             p2p_power = power_exchanges.stack()
@@ -178,7 +179,7 @@ class CommunityMicrogrid:
                     # Compute reward
                     r = agent.get_reward(costs[i])
 
-                    agent.save_memory(r, tf.expand_dims(next_state, axis=0), tf.zeros(len(self.agents)))
+                    agent.save_memory(r, tf.expand_dims(next_state, axis=0))
 
                 self._step()
 
@@ -201,7 +202,7 @@ class CommunityMicrogrid:
             for i, agent in enumerate(self.agents):
                 # Compute reward
                 r = agent.get_reward(costs[i])
-                l = agent.train(r, tf.expand_dims(next_state, axis=0), tf.zeros(len(self.agents)))
+                l = agent.train(r, tf.expand_dims(next_state, axis=0))
 
                 # Save statistics
                 _rewards = _rewards.write(i, r)
@@ -237,7 +238,7 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main() -> None:
+def main(con: sqlite3.Connection) -> None:
     nr_agents = 2
 
     print("Creating community...")
@@ -262,11 +263,22 @@ def main() -> None:
             episodes_error.append(error)
 
             if episode % min_episodes_criterion == 0:
-                print(f'Average reward: {statistics.mean(episodes_reward):.3f}. '
-                      f'Average error: {statistics.mean(episodes_error):.3f}')
+                _reward = statistics.mean(episodes_reward)
+                _error = statistics.mean(episodes_error)
+                print(f'Average reward: {_reward:.3f}. '
+                      f'Average error: {_error:.3f}')
 
                 for agent in community.agents:
                     agent.actor.decay_exploration()
+
+                db.log_training_progress(con, 'multi-agent-no-com', 'q-table', episode, _reward, _error)
+
+            if (episode + 1) % save_episodes == 0:
+                np.save('../models_tabular/multi_agent_no_com.npy', community.agent.actor.q_table)
+
+        _reward = statistics.mean(episodes_reward)
+        _error = statistics.mean(episodes_error)
+        db.log_training_progress(con, 'multi-agent-no-com', 'q-table', episode, _reward, _error)
 
     print("Running...")
     env_df, agent_df = ds.get_validation_data()
@@ -279,19 +291,27 @@ def main() -> None:
     power, cost = community.run()
 
     print("Analysing...")
-    # plt.figure(0)
-    # plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
-    # plt.legend(['0', '1', '2'])
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-max_episodes = 500
-min_episodes_criterion = 100
+max_episodes = 1000
+min_episodes_criterion = 50
+save_episodes = 500
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 
 
 if __name__ == '__main__':
-    main()
+    db_connection = db.get_connection()
+
+    try:
+        main(db_connection)
+    except:
+        print("There was a problem during execution")
+    finally:
+        if db_connection:
+            db_connection.close()
+
+
 

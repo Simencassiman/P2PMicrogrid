@@ -34,13 +34,12 @@ eps = np.finfo(np.float32).eps.item()
 class QActor:
 
     def __init__(self, num_time_states: int, num_temperature_states: int, num_balance_states: int,
-                 num_p2p_states: int, num_actions: int = 3, gamma: float = 0.9,
+                num_actions: int = 3, gamma: float = 0.9,
                  alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.95) -> None:
 
         self._time_states = num_time_states
         self._temp_states = num_temperature_states
         self._balance_states = num_balance_states
-        self._p2p_states = num_p2p_states
         self._num_actions = num_actions
 
         self._epsilon = epsilon
@@ -48,16 +47,19 @@ class QActor:
         self._gamma = gamma
         self._alpha = alpha
 
-        self._q_table = np.zeros((num_time_states, num_temperature_states, num_balance_states, num_p2p_states,
+        self._q_table = np.zeros((num_time_states, num_temperature_states, num_balance_states,
                                   num_actions))
 
-    def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int, int]:
+    @property
+    def q_table(self) -> np.ndarray:
+        return self._q_table
+
+    def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
         temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
         balance = max(min(int((state[0, 2] + 1) / 2) * self._balance_states, self._balance_states - 1), 0)
-        p2p = max(min(int((state[0, 3] + 1) / 2) * self._p2p_states, self._p2p_states - 1), 0)
 
-        return time, temperature, balance, p2p
+        return time, temperature, balance
 
     def select_action(self, state: tf.Tensor) -> Tuple[int, float]:
         if np.random.rand() < self._epsilon:
@@ -73,21 +75,21 @@ class QActor:
         return np.random.choice(self._num_actions), 0.
 
     def greedy_action(self, state: tf.Tensor) -> Tuple[int, float]:
-        time, temperature, balance, p2p = self._get_state_indices(state.numpy())
+        time, temperature, balance = self._get_state_indices(state.numpy())
 
-        action = self._q_table[time, temperature, balance, p2p, :].argmax()
-        return action, self._q_table[time, temperature, balance, p2p, action]
+        action = self._q_table[time, temperature, balance, :].argmax()
+        return action, self._q_table[time, temperature, balance, action]
 
     def train(self, state: tf.Tensor, action: int, reward: tf.Tensor, next_state: tf.Tensor) -> None:
-        time, temperature, balance, p2p = self._get_state_indices(state.numpy())
-        next_time, next_temperature, next_balance, p2p = self._get_state_indices(next_state.numpy())
+        time, temperature, balance = self._get_state_indices(state.numpy())
+        next_time, next_temperature, next_balance = self._get_state_indices(next_state.numpy())
 
-        q_max = self._q_table[next_time, next_temperature, next_balance, p2p, :].max()
+        q_max = self._q_table[next_time, next_temperature, next_balance, :].max()
 
-        self._q_table[time, temperature, balance, p2p, action] = (
-            self._q_table[time, temperature, balance, p2p, action]
+        self._q_table[time, temperature, balance, action] = (
+            self._q_table[time, temperature, balance, action]
             + self._alpha * (reward.numpy() + self._gamma * q_max
-                             - self._q_table[time, temperature, balance, p2p, action])
+                             - self._q_table[time, temperature, balance, action])
         )
 
     def decay_exploration(self) -> None:
