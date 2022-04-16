@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import sqlite3
 import statistics
 from typing import List, Tuple, Callable, Any
 import numpy as np
@@ -9,7 +10,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tqdm import trange
-import matplotlib.pyplot as plt
 
 # Local Modules
 from environment import env
@@ -20,6 +20,7 @@ from storage import NoStorage
 from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
 import dataset as ds
+import database as db
 
 
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int) -> CommunityMicrogrid:
@@ -64,7 +65,9 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
     # Prepare environment
     env.setup(ds.dataframe_to_dataset(env_df))
 
-    return CommunityMicrogrid(timeline, agents)
+    comm = CommunityMicrogrid(timeline, agents) if n_agents > 1 else SingleAgentCommunity(timeline, agents)
+
+    return comm
 
 
 def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
@@ -237,18 +240,98 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main() -> None:
-    nr_agents = 2
+class SingleAgentCommunity(CommunityMicrogrid):
+
+    def __init__(self, timeline: pd.DataFrame, agents: List[ActingAgent]) -> None:
+        super(SingleAgentCommunity, self).__init__(timeline, agents)
+
+        self.agent = agents[0]
+
+    def _compute_costs_individual(self, grid_power: tf.Tensor, buying_price: tf.Tensor,
+                                  injection_price: tf.Tensor,) -> tf.Tensor:
+        costs = (
+            tf.where(grid_power <= 0.,
+                     grid_power * buying_price[:, None],
+                     grid_power * injection_price[:, None])
+        ) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
+
+        return costs
+
+    def _run(self, state: tf.Tensor,
+             training: bool = False) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        buying_price, injection_price = self.grid.take_decision(state)
+
+        if training:
+            # Run the model and to get action probabilities and critic value
+            action, _ = self.agent(tf.expand_dims(state, axis=0))
+        else:
+            action, _ = self.agent.take_decision(tf.expand_dims(state, axis=0))
+
+        return action, None, buying_price, injection_price, None
+
+    def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        len_env = len(env)
+        buying_price = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        injection_price = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+        grid_power = tf.TensorArray(dtype=tf.float32, size=len_env, dynamic_size=False)
+
+        for time, (features, next_features) in enumerate(env.data):
+            power_grid, _, price_buy, price_inj, _ = self._run(features)
+
+            grid_power = grid_power.write(time, power_grid)
+            buying_price = buying_price.write(time, price_buy)
+            injection_price = injection_price.write(time, price_inj)
+
+            self._step()
+
+        grid_power = grid_power.stack()
+
+        costs = tf.math.reduce_sum(self._compute_costs_individual(grid_power,
+                                                                  buying_price.concat(),
+                                                                  injection_price.concat()),
+                                   axis=0)
+
+        return grid_power, -costs
+
+    def train_episode(self, all_rewards: tf.TensorArray, all_losses: tf.TensorArray,
+                      *args, **kwargs) -> Tuple[float, float]:
+        for t, (state, next_state) in enumerate(env.data):
+
+            power_grid, _, p_buy, p_inj, _ = self._run(state, training=True)
+
+            costs = tf.squeeze(self._compute_costs_individual(power_grid, tf.expand_dims(p_buy, axis=0),
+                                                              tf.expand_dims(p_inj, axis=0)))
+
+            # Compute reward
+            r = self.agent.get_reward(costs)
+            l = self.agent.train(r, tf.expand_dims(next_state, axis=0))
+
+            # Save statistics
+            all_rewards = all_rewards.write(t, r)
+            all_losses = all_losses.write(t, l)
+
+            self._step()
+
+        self.agent.reset()
+
+        all_rewards = all_rewards.stack()
+        all_losses = all_losses.stack()
+
+        total_reward = float(tf.math.reduce_sum(all_rewards))
+        avg_loss = float(tf.math.reduce_mean(all_losses))
+
+        return total_reward, avg_loss
+
+
+def main(con: sqlite3.Connection) -> None:
+    nr_agents = 1
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
 
     env_len = len(env)
-    agents_len = len(community.agents)
     rewards = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
     losses = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
-    _rewards = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
-    _losses = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
 
     # print("Initializing buffers...")
     # community.init_buffers()
@@ -256,17 +339,26 @@ def main() -> None:
     print("Training...")
     with trange(max_episodes) as episodes:
         for episode in episodes:
-            reward, error = community.train_episode(rewards, losses, _rewards, _losses)
+            reward, error = community.train_episode(rewards, losses, None, None)
 
             episodes_reward.append(reward)
             episodes_error.append(error)
 
             if episode % min_episodes_criterion == 0:
-                print(f'Average reward: {statistics.mean(episodes_reward):.3f}. '
-                      f'Average error: {statistics.mean(episodes_error):.3f}')
+                _reward = statistics.mean(episodes_reward)
+                _error = statistics.mean(episodes_error)
+                print(f'Average reward: {_reward:.3f}. '
+                      f'Average error: {_error:.3f}')
 
-                for agent in community.agents:
-                    agent.actor.decay_exploration()
+                db.log_training_progress(con, 'single-agent-2', 'q-table', episode, _reward, _error)
+                community.agent.actor.decay_exploration()
+
+            if (episode + 1) % save_episodes == 0:
+                np.save('../models_tabular/single_agent_2.npy', community.agent.actor.q_table)
+
+        _reward = statistics.mean(episodes_reward)
+        _error = statistics.mean(episodes_error)
+        db.log_training_progress(con, 'single-agent-2', 'q-table', episode, _reward, _error)
 
     print("Running...")
     env_df, agent_df = ds.get_validation_data()
@@ -279,19 +371,25 @@ def main() -> None:
     power, cost = community.run()
 
     print("Analysing...")
-    # plt.figure(0)
-    # plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
-    # plt.legend(['0', '1', '2'])
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-max_episodes = 500
-min_episodes_criterion = 100
+max_episodes = 2 * 1000
+min_episodes_criterion = 50
+save_episodes = 500
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 
 
 if __name__ == '__main__':
-    main()
+    db_connection = db.get_connection()
+
+    try:
+        main(db_connection)
+    except:
+        print("There was a problem during execution")
+    finally:
+        if db_connection:
+            db_connection.close()
 

@@ -186,7 +186,6 @@ class RLAgent(ActingAgent):
         self._next_balance: tf.Tensor = None
         self._current_state: tf.Tensor = None
         self._action: tf.Tensor = None
-        self._price = tf.constant([0])
 
     def _get_balance(self) -> Tuple[tf.Tensor, tf.Tensor]:
         load, pv = self._next_load, self._next_production
@@ -194,71 +193,50 @@ class RLAgent(ActingAgent):
         return tf.expand_dims(load[0] - pv[0], axis=0) / self.max_in,\
                tf.expand_dims(load[1] - pv[1], axis=0) / self.max_in
 
-    def _get_observation_state(self, state: tf.Tensor, balance: tf.Tensor, p2p: tf.Tensor) -> tf.Tensor:
+    def _get_observation_state(self, state: tf.Tensor, balance: tf.Tensor) -> tf.Tensor:
         observation = tf.expand_dims(tf.concat([state[:, 0],
                                                 self.heating.normalized_temperature,
-                                                balance,
-                                                tf.expand_dims(p2p, axis=0)], axis=0), axis=0)
+                                                balance], axis=0), axis=0)
 
         return observation
 
-    def _divide_power(self, out: tf.Tensor, powers: tf.Tensor) -> tf.Tensor:
-        filtered = tf.where(tf.math.sign(out) != tf.math.sign(powers), powers, 0.)
-        total_p = tf.math.abs(tf.math.reduce_sum(filtered))
-
-        if total_p == tf.constant([0.]):
-            p_out = out * tf.ones(shape=powers.shape) / powers.shape[0]
-        else:
-            p_out = out * tf.math.abs(filtered) / total_p
-
-        return p_out
-
-    def __call__(self, state: tf.Tensor, powers: tf.Tensor,
-                 *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-
-        p2p = tf.math.reduce_mean(powers) / self.max_in
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         self._current_balance, self._next_balance = self._get_balance()
 
-        self._current_state = self._get_observation_state(state, self._current_balance, p2p)
+        self._current_state = self._get_observation_state(state, self._current_balance)
 
         self._action, q_val = self.actor(self._current_state)
         self.heating.set_power(float(self._action[0]))
 
-        p_out = self._divide_power(self._current_balance * self.max_in + self.heating.power,
-                                   powers)
+        p_out = self._current_balance * self.max_in + self.heating.power
 
-        return p_out, self._price, q_val
+        return p_out, q_val
 
-    def explore(self, state: tf.Tensor, powers: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def explore(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         self._current_balance, self._next_balance = self._get_balance()
-        p2p = tf.math.reduce_mean(powers) / self.max_in
-        self._current_state = self._get_observation_state(state, self._current_balance, p2p)
+        self._current_state = self._get_observation_state(state, self._current_balance)
 
         self._action, q = self.actor.random_action()
 
         self.heating.set_power(float(self._action[0]))
 
-        p_out = self._divide_power(self._current_balance * self.max_in + self.heating.power,
-                                   powers)
+        p_out = self._current_balance * self.max_in + self.heating.power
 
-        return p_out, self._price, q
+        return p_out, q
 
-    def take_decision(self, state: tf.Tensor, powers: tf.Tensor,
-                      *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        p2p = tf.math.reduce_mean(powers) / self.max_in
+    def take_decision(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         current_balance = self._get_balance()[0]
-        new_state = self._get_observation_state(state, current_balance, p2p)
+        new_state = self._get_observation_state(state, current_balance)
 
         action, q = self.actor.greedy_action(new_state)
         self.heating.set_power(float(action[0]))
 
-        p_out = self._divide_power(current_balance * self.max_in + self.heating.power,
-                                   powers)
+        p_out = current_balance * self.max_in + self.heating.power
 
-        return p_out, self._price, q[:, 0]
+        return p_out, q[:, 0]
 
-    def train(self, reward: tf.Tensor, next_state: tf.Tensor, powers: tf.Tensor) -> float:
-        self.save_memory(reward, next_state, powers)
+    def train(self, reward: tf.Tensor, next_state: tf.Tensor) -> float:
+        self.save_memory(reward, next_state)
         loss = self.trainer.train()
 
         return loss
@@ -272,9 +250,8 @@ class RLAgent(ActingAgent):
 
         return r
 
-    def save_memory(self, reward: tf.Tensor, next_state: tf.Tensor, powers: tf.Tensor) -> None:
-        p2p = tf.math.reduce_mean(powers) / self.max_in
-        ns = self._get_observation_state(next_state, self._next_balance, p2p)
+    def save_memory(self, reward: tf.Tensor, next_state: tf.Tensor) -> None:
+        ns = self._get_observation_state(next_state, self._next_balance)
         self.trainer.buffer.add(self._current_state[0, :], self._action, reward, ns[0, :])
 
     def step(self) -> None:
@@ -307,44 +284,36 @@ class QAgent(RLAgent):
         self._num_time_states = 20
         self._num_temp_states = 20
         self._num_balance_states = 20
-        self._num_p2p_states = 20
 
         self._actions = np.array([0., 0.5, 1.])
-        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states,
-                               self._num_p2p_states, decay=0.8)
+        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states, decay=0.95)
 
         self._last_action: int = -1
 
-    def __call__(self, state: tf.Tensor, powers: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        p2p = tf.math.reduce_mean(powers) / self.max_in
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         self._current_balance, self._next_balance = self._get_balance()
-        self._current_state = self._get_observation_state(state, self._current_balance, p2p)
+        self._current_state = self._get_observation_state(state, self._current_balance)
 
         self._last_action, q = self.actor.select_action(self._current_state)
         self.heating.set_power(self._actions[self._last_action])
 
-        p_out = self._divide_power(self._current_balance * self.max_in + self.heating.power,
-                                   powers)
+        p_out = self._current_balance * self.max_in + self.heating.power
 
-        return p_out, None, q
+        return p_out, q
 
-    def take_decision(self, state: tf.Tensor, powers: tf.Tensor,
-                      *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        p2p = tf.math.reduce_mean(powers) / self.max_in
+    def take_decision(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         current_balance = self._get_balance()[0]
-        new_state = self._get_observation_state(state, current_balance, p2p)
+        new_state = self._get_observation_state(state, current_balance)
 
         action, q = self.actor.greedy_action(new_state)
         self.heating.set_power(self._actions[action])
 
-        p_out = self._divide_power(current_balance * self.max_in + self.heating.power,
-                                   powers)
+        p_out = current_balance * self.max_in + self.heating.power
 
-        return p_out, None, q
+        return p_out, q
 
-    def train(self, reward: tf.Tensor, next_state: tf.Tensor, powers: tf.Tensor) -> float:
-        p2p = tf.math.reduce_mean(powers) / self.max_in
-        ns = self._get_observation_state(next_state, self._next_balance, p2p)
+    def train(self, reward: tf.Tensor, next_state: tf.Tensor) -> float:
+        ns = self._get_observation_state(next_state, self._next_balance)
         self.actor.train(self._current_state, self._last_action, reward, ns)
 
         return 0.
