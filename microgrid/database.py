@@ -57,6 +57,13 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             PRIMARY KEY (settings, date, time) )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS training_progress 
+            (setting text NOT NULL, agent text NOT NULL, episode text NOT NULL,
+             reward real, error real,
+            PRIMARY KEY (setting, agent, episode) )
+        """)
+
     else:
         print('Unable to create tables')
 
@@ -115,6 +122,8 @@ def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: in
 
         con.commit()
 
+        cursor.close()
+
 
 def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], time: List[float],
                     load: List[float], pv: List[float], target_load: List[float], target_pv: List[float]) -> None:
@@ -129,6 +138,21 @@ def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], t
         cursor.executemany(query, records)
 
         con.commit()
+
+        cursor.close()
+
+
+def log_training_progress(con: sqlite3.Connection,
+                          setting: str, agent_type: str, episode: int, reward: float, error: float) -> None:
+    if con is not None:
+        cursor = con.cursor()
+        query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
+
+        cursor.execute(query, (setting, agent_type, episode, reward, error))
+
+        con.commit()
+
+        cursor.close()
 
 
 if __name__ == '__main__':

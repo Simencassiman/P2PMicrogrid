@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import collections
+import re
+import sqlite3
 import statistics
+import traceback
 from typing import List, Tuple, Callable, Any
 import numpy as np
 
@@ -20,6 +23,7 @@ from storage import NoStorage
 from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
 import dataset as ds
+import database as db
 
 
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int) -> CommunityMicrogrid:
@@ -88,7 +92,7 @@ class CommunityMicrogrid:
 
     def _assign_powers(self, p2p_power: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         p_match = tf.where(tf.math.sign(p2p_power) != tf.math.sign(tf.transpose(p2p_power)),
-                           p2p_power + tf.transpose(p2p_power),
+                           p2p_power,
                            0.)
         exchange = tf.math.sign(p_match) * tf.math.minimum(tf.math.abs(p_match), tf.transpose(tf.math.abs(p_match)))
 
@@ -100,10 +104,10 @@ class CommunityMicrogrid:
     def _compute_costs(self, grid_power: tf.Tensor, peer_power: tf.Tensor,
                        buying_price: tf.Tensor, injection_price: tf.Tensor, p2p_price: tf.Tensor) -> tf.Tensor:
         costs = (
-            tf.where(grid_power <= 0.,
-                     grid_power * buying_price[:, None],
-                     grid_power * injection_price[:, None])
-            + peer_power * p2p_price[:, None]
+                tf.where(grid_power >= 0.,
+                         grid_power * buying_price[:, None],
+                         grid_power * injection_price[:, None])
+                + peer_power * p2p_price[:, None]
         ) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
 
         return costs
@@ -122,11 +126,10 @@ class CommunityMicrogrid:
             for i, agent in enumerate(self.agents):
                 if training:
                     # Run the model and to get action probabilities and critic value
-                    action, _, _ = agent(tf.expand_dims(state, axis=0),
-                                         p2p_power[:, i])
+                    action, _ = agent(tf.expand_dims(state, axis=0), -p2p_power[:, i])
                 else:
-                    action, _, q = agent.take_decision(tf.expand_dims(state, axis=0), p2p_power[:, i])
-                power_exchanges = power_exchanges.write(i, -action)
+                    action, _ = agent.take_decision(tf.expand_dims(state, axis=0), -p2p_power[:, i])
+                power_exchanges = power_exchanges.write(i, action)
 
             p2p_power = power_exchanges.stack()
 
@@ -163,7 +166,7 @@ class CommunityMicrogrid:
                                                        p2p_price.concat()),
                                    axis=0)
 
-        return -(grid_power + peer_power), -costs
+        return grid_power + peer_power, costs
 
     def init_buffers(self) -> None:
         for _ in range(1):
@@ -237,8 +240,9 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main() -> None:
+def main(con: sqlite3.Connection) -> None:
     nr_agents = 2
+    setting = f'{nr_agents}-multi-agent-com-homo'
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -262,11 +266,23 @@ def main() -> None:
             episodes_error.append(error)
 
             if episode % min_episodes_criterion == 0:
-                print(f'Average reward: {statistics.mean(episodes_reward):.3f}. '
-                      f'Average error: {statistics.mean(episodes_error):.3f}')
+                _reward = statistics.mean(episodes_reward)
+                _error = statistics.mean(episodes_error)
+                print(f'Average reward: {_reward:.3f}. '
+                      f'Average error: {_error:.3f}')
 
                 for agent in community.agents:
                     agent.actor.decay_exploration()
+
+                db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
+
+            if (episode + 1) % save_episodes == 0:
+                for i, agent in enumerate(community.agents):
+                    np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
+
+        _reward = statistics.mean(episodes_reward)
+        _error = statistics.mean(episodes_error)
+        db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
 
     print("Running...")
     env_df, agent_df = ds.get_validation_data()
@@ -285,13 +301,22 @@ def main() -> None:
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-max_episodes = 500
-min_episodes_criterion = 100
+max_episodes = 1000
+min_episodes_criterion = 50
+save_episodes = 500
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 
 
 if __name__ == '__main__':
-    main()
+    db_connection = db.get_connection()
+
+    try:
+        main(db_connection)
+    except Exception:
+        print(traceback.format_exc())
+    finally:
+        if db_connection:
+            db_connection.close()
 
