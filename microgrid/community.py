@@ -90,7 +90,7 @@ class CommunityMicrogrid:
 
     def _assign_powers(self, p2p_power: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         p_match = tf.where(tf.math.sign(p2p_power) != tf.math.sign(tf.transpose(p2p_power)),
-                           p2p_power + tf.transpose(p2p_power),
+                           p2p_power,
                            0.)
         exchange = tf.math.sign(p_match) * tf.math.minimum(tf.math.abs(p_match), tf.transpose(tf.math.abs(p_match)))
 
@@ -102,7 +102,7 @@ class CommunityMicrogrid:
     def _compute_costs(self, grid_power: tf.Tensor, peer_power: tf.Tensor,
                        buying_price: tf.Tensor, injection_price: tf.Tensor, p2p_price: tf.Tensor) -> tf.Tensor:
         costs = (
-            tf.where(grid_power <= 0.,
+            tf.where(grid_power >= 0.,
                      grid_power * buying_price[:, None],
                      grid_power * injection_price[:, None])
             + peer_power * p2p_price[:, None]
@@ -133,7 +133,7 @@ class CommunityMicrogrid:
 
         p_grid, p_p2p = self._assign_powers(p2p_power)
 
-        return p_grid, p_p2p, buying_price, injection_price, p2p_price
+        return -p_grid, p_p2p, buying_price, injection_price, p2p_price
 
     def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
         len_env = len(env)
@@ -164,7 +164,7 @@ class CommunityMicrogrid:
                                                        p2p_price.concat()),
                                    axis=0)
 
-        return -(grid_power + peer_power), -costs
+        return grid_power + peer_power, costs
 
     def init_buffers(self) -> None:
         for _ in range(1):
