@@ -103,7 +103,7 @@ class CommunityMicrogrid:
     def _compute_costs(self, grid_power: tf.Tensor, peer_power: tf.Tensor,
                        buying_price: tf.Tensor, injection_price: tf.Tensor, p2p_price: tf.Tensor) -> tf.Tensor:
         costs = (
-            tf.where(grid_power <= 0.,
+            tf.where(grid_power >= 0.,
                      grid_power * buying_price[:, None],
                      grid_power * injection_price[:, None])
             + peer_power * p2p_price[:, None]
@@ -250,7 +250,7 @@ class SingleAgentCommunity(CommunityMicrogrid):
     def _compute_costs_individual(self, grid_power: tf.Tensor, buying_price: tf.Tensor,
                                   injection_price: tf.Tensor,) -> tf.Tensor:
         costs = (
-            tf.where(grid_power <= 0.,
+            tf.where(grid_power >= 0.,
                      grid_power * buying_price[:, None],
                      grid_power * injection_price[:, None])
         ) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
