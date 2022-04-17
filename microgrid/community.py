@@ -374,6 +374,27 @@ def main(con: sqlite3.Connection) -> None:
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
+def load_and_run() -> None:
+    nr_agents = 1
+
+    print("Creating community...")
+    community = get_rl_based_community(nr_agents)
+
+    env_df, agent_df = ds.get_validation_data()
+    env.setup(ds.dataframe_to_dataset(env_df))
+    for agent in community.agents:
+        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
+        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
+        agent.set_profiles(agent_load, agent_pv)
+        agent.actor.set_qtable(np.load(f'../models_tabular/single_agent.npy'))
+
+    print("Running...")
+    power, cost = community.run()
+
+    print("Analysing...")
+    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+
+
 max_episodes = 2 * 1000
 min_episodes_criterion = 50
 save_episodes = 500
@@ -383,13 +404,15 @@ episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criter
 
 
 if __name__ == '__main__':
-    db_connection = db.get_connection()
-
-    try:
-        main(db_connection)
-    except:
-        print("There was a problem during execution")
-    finally:
-        if db_connection:
-            db_connection.close()
+    load_and_run()
+    
+    # db_connection = db.get_connection()
+    #
+    # try:
+    #     main(db_connection)
+    # except:
+    #     print("There was a problem during execution")
+    # finally:
+    #     if db_connection:
+    #         db_connection.close()
 

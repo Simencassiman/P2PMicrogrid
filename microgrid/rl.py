@@ -54,6 +54,9 @@ class QActor:
     def q_table(self) -> np.ndarray:
         return self._q_table
 
+    def set_qtable(self, q_table: np.ndarray) -> None:
+        self._q_table = q_table
+
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
         temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
