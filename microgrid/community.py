@@ -1,6 +1,6 @@
 # Python Libraries
 from __future__ import annotations
-
+import traceback
 import collections
 import sqlite3
 import statistics
@@ -274,7 +274,8 @@ def main(con: sqlite3.Connection) -> None:
                 db.log_training_progress(con, 'multi-agent-no-com', 'q-table', episode, _reward, _error)
 
             if (episode + 1) % save_episodes == 0:
-                np.save('../models_tabular/multi_agent_no_com.npy', community.agent.actor.q_table)
+                for i, agent in enumerate(community.agents):
+                    np.save(f'../models_tabular/multi_agent_no_com_{i}.npy', agent.actor.q_table)
 
         _reward = statistics.mean(episodes_reward)
         _error = statistics.mean(episodes_error)
@@ -307,8 +308,8 @@ if __name__ == '__main__':
 
     try:
         main(db_connection)
-    except:
-        print("There was a problem during execution")
+    except Exception:
+        print(traceback.format_exc())
     finally:
         if db_connection:
             db_connection.close()

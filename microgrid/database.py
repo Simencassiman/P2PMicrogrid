@@ -157,6 +157,22 @@ if __name__ == '__main__':
 
     if conn is not None:
 
+        cursor = conn.cursor()
+        try:
+
+            query = """
+                DELETE  
+                FROM training_progress
+                WHERE setting LIKE '%multi-agent%'
+            """
+
+            cursor.execute(query)
+
+            conn.commit()
+
+        finally:
+            cursor.close()
+            conn.close()
 
         # query = """
         #     SELECT settings, time, load
@@ -185,15 +201,15 @@ if __name__ == '__main__':
         # plt.show()
 
         # Check training and validation results
-        query = """
-            SELECT settings, trial, episode 
-            FROM hyperparameters_single_day
-            WHERE settings LIKE '%bu=100000%'
-        """
-
-        df = pd.read_sql_query(query, conn)
-        print(df.tail())
-        print(df.columns)
+        # query = """
+        #     SELECT settings, trial, episode
+        #     FROM hyperparameters_single_day
+        #     WHERE settings LIKE '%bu=100000%'
+        # """
+        #
+        # df = pd.read_sql_query(query, conn)
+        # print(df.tail())
+        # print(df.columns)
         # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
         # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
         # settings = df['settings']
@@ -238,6 +254,5 @@ if __name__ == '__main__':
         #
         # print(df.head())
         # print(df.tail())
-
     else:
         print('Could not connect to database')
