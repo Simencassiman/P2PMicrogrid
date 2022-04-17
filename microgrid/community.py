@@ -6,6 +6,7 @@ import sqlite3
 import statistics
 from typing import List, Tuple, Callable, Any
 import numpy as np
+import re
 
 import pandas as pd
 import tensorflow as tf
@@ -240,6 +241,7 @@ class CommunityMicrogrid:
 
 def main(con: sqlite3.Connection) -> None:
     nr_agents = 2
+    setting = '2-multi-agent-no-com-homo'
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -271,15 +273,15 @@ def main(con: sqlite3.Connection) -> None:
                 for agent in community.agents:
                     agent.actor.decay_exploration()
 
-                db.log_training_progress(con, 'multi-agent-no-com', 'q-table', episode, _reward, _error)
+                db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
 
             if (episode + 1) % save_episodes == 0:
                 for i, agent in enumerate(community.agents):
-                    np.save(f'../models_tabular/multi_agent_no_com_{i}.npy', agent.actor.q_table)
+                    np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
 
         _reward = statistics.mean(episodes_reward)
         _error = statistics.mean(episodes_error)
-        db.log_training_progress(con, 'multi-agent-no-com', 'q-table', episode, _reward, _error)
+        db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
 
     print("Running...")
     env_df, agent_df = ds.get_validation_data()
@@ -325,17 +327,16 @@ episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criter
 
 
 if __name__ == '__main__':
-    load_and_run()
 
-    # db_connection = db.get_connection()
-    #
-    # try:
-    #     main(db_connection)
-    # except Exception:
-    #     print(traceback.format_exc())
-    # finally:
-    #     if db_connection:
-    #         db_connection.close()
+    db_connection = db.get_connection()
+
+    try:
+        main(db_connection)
+    except Exception:
+        print(traceback.format_exc())
+    finally:
+        if db_connection:
+            db_connection.close()
 
 
 

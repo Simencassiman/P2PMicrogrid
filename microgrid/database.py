@@ -161,7 +161,7 @@ if __name__ == '__main__':
         try:
 
             query = """
-                DELETE  
+                SELECT *  
                 FROM training_progress
                 WHERE setting LIKE '%multi-agent%'
             """
