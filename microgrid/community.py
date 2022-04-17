@@ -125,16 +125,16 @@ class CommunityMicrogrid:
             for i, agent in enumerate(self.agents):
                 if training:
                     # Run the model and to get action probabilities and critic value
-                    action, _ = agent(tf.expand_dims(state, axis=0), p2p_power[:, i])
+                    action, _ = agent(tf.expand_dims(state, axis=0), -p2p_power[:, i])
                 else:
-                    action, q = agent.take_decision(tf.expand_dims(state, axis=0), p2p_power[:, i])
-                power_exchanges = power_exchanges.write(i, -action)
+                    action, q = agent.take_decision(tf.expand_dims(state, axis=0), -p2p_power[:, i])
+                power_exchanges = power_exchanges.write(i, action)
 
             p2p_power = power_exchanges.stack()
 
         p_grid, p_p2p = self._assign_powers(p2p_power)
 
-        return -p_grid, p_p2p, buying_price, injection_price, p2p_price
+        return p_grid, p_p2p, buying_price, injection_price, p2p_price
 
     def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
         len_env = len(env)
