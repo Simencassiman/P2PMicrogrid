@@ -135,7 +135,7 @@ class CommunityMicrogrid:
 
         p_grid, p_p2p = self._assign_powers(p2p_power)
 
-        return p_grid, p_p2p, buying_price, injection_price, p2p_price
+        return -p_grid, -p_p2p, buying_price, injection_price, p2p_price
 
     def run(self) -> Tuple[tf.Tensor, tf.Tensor]:
         len_env = len(env)
@@ -166,7 +166,7 @@ class CommunityMicrogrid:
                                                        p2p_price.concat()),
                                    axis=0)
 
-        return -(grid_power + peer_power), -costs
+        return grid_power + peer_power, costs
 
     def init_buffers(self) -> None:
         for _ in range(1):
@@ -291,7 +291,7 @@ class SingleAgentCommunity(CommunityMicrogrid):
                                                                   injection_price.concat()),
                                    axis=0)
 
-        return grid_power, -costs
+        return grid_power, costs
 
     def train_episode(self, all_rewards: tf.TensorArray, all_losses: tf.TensorArray,
                       *args, **kwargs) -> Tuple[float, float]:
