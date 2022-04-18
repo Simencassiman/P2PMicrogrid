@@ -26,9 +26,13 @@ import dataset as ds
 import database as db
 
 
-def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int) -> CommunityMicrogrid:
+def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
+                  homogeneous: bool = False) -> CommunityMicrogrid:
     # Load time series
-    env_df, agent_df = ds.get_train_data()
+    env_df, agent_dfs = ds.get_train_data()
+
+    if homogeneous:
+        agent_dfs = [agent_dfs[0]] * n_agents
 
     # Get dates for plotting
     # ds.get_train_isodate()
@@ -44,8 +48,8 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
 
     agents: List[ActingAgent] = []
 
-    load_ratings = np.array([0.7] * n_agents)  # np.random.normal(0.7, 0.2, n_agents)
-    pv_ratings = np.array([4] * n_agents)  # np.random.normal(4, 0.2, n_agents)
+    load_ratings = np.random.normal(0.7, 0.2, n_agents) if not homogeneous else np.array([0.7] * n_agents)
+    pv_ratings = np.random.normal(4, 0.2, n_agents) if not homogeneous else np.array([4] * n_agents)
 
     # Create agents
     Agent.reset_ids()
@@ -53,8 +57,8 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
         max_power = max(load_ratings[i], pv_ratings[i])
         safety = 1.1
 
-        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * load_ratings[i] * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * pv_ratings[i] * 1e3)
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * load_ratings[i] * 1e3)
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * pv_ratings[i] * 1e3)
 
         agents.append(agent_constructor(agent_load,
                                         Prosumer(PV(peak_power=pv_ratings[i] * 1e3,
@@ -242,7 +246,7 @@ class CommunityMicrogrid:
 
 def main(con: sqlite3.Connection) -> None:
     nr_agents = 2
-    setting = f'{nr_agents}-multi-agent-com-homo'
+    setting = f'{nr_agents}-multi-agent-com-hetero'
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -285,19 +289,16 @@ def main(con: sqlite3.Connection) -> None:
         db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
 
     print("Running...")
-    env_df, agent_df = ds.get_validation_data()
+    env_df, agent_dfs = ds.get_validation_data()
     env.setup(ds.dataframe_to_dataset(env_df))
-    for agent in community.agents:
-        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
+    for i, agent in enumerate(community.agents):
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
         agent.set_profiles(agent_load, agent_pv)
     
     power, cost = community.run()
 
     print("Analysing...")
-    # plt.figure(0)
-    # plt.plot(np.arange(community.q.shape[0]), community.q[:, 0, :])
-    # plt.legend(['0', '1', '2'])
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
@@ -310,6 +311,7 @@ episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criter
 
 
 if __name__ == '__main__':
+
     db_connection = db.get_connection()
 
     try:

@@ -1,10 +1,13 @@
 # Python Libraries
 import sqlite3
 import os.path as osp
+import traceback
 from typing import List
 import matplotlib.pyplot as plt
 import re
 
+import numpy as np
+import pandas
 import pandas as pd
 from datetime import datetime
 
@@ -39,7 +42,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS load
             (date text NOT NULL, time text NOT NULL, utc text NOT NULL, 
-            load_0 real,
+            l0 real, l1 real, 
             PRIMARY KEY (date, time, utc) )
         """)
 
@@ -100,6 +103,38 @@ def get_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.Data
     df = pd.merge(df_env, df_l, on=['date', 'time', 'utc'], copy=False)
 
     return df
+
+
+def generate_additional_load(con: sqlite3) -> None:
+    if con is not None:
+        cursor = conn.cursor()
+
+        query_1 = """
+                        SELECT *
+                        FROM load
+                        WHERE date LIKE '%-10-%'
+                    """
+        query_2 = """
+                        UPDATE load
+                        SET l1 = ?
+                        WHERE date = ? AND time = ? AND utc = ?
+                    """
+
+        df = pd.read_sql_query(query_1, conn)
+
+        df.loc[df['l0'] > df['l0'].median() * 2, 'l0'] = df['l0'].median() * 2
+        max_l = df['l0'].max()
+        df['l0'] = 1 - df['l0'] / max_l
+        df['days'] = df['date'].map(lambda d: int(re.match(r'.*-([0-9]{2})$', d).groups()[0]))
+        days = df['days'].unique().tolist()
+        df2 = pd.concat(map(lambda d: df[df['days'] == d], np.random.permutation(days))).reset_index()
+        df['l1'] = df2['l0'] * max_l
+
+        records = [*zip(df['l1'], df['date'], df['time'], df['utc'])]
+
+        cursor.executemany(query_2, records)
+
+        conn.commit()
 
 
 def get_load_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.DataFrame:
@@ -166,6 +201,27 @@ if __name__ == '__main__':
 
     if conn is not None:
 
+        try:
+            cursor = conn.cursor()
+
+            query = """
+                SELECT *
+                FROM load
+                WHERE date LIKE '%-10-%'
+            """
+
+            df = pd.read_sql_query(query, conn)
+
+            plt.plot(np.arange(len(df)), df['l0'], df['l1'])
+            plt.show()
+
+            # conn.commit()
+
+        except:
+            print(traceback.format_exc())
+        finally:
+
+            conn.close()
 
         # query = """
         #     SELECT settings, time, load
@@ -194,15 +250,15 @@ if __name__ == '__main__':
         # plt.show()
 
         # Check training and validation results
-        query = """
-            SELECT settings, trial, episode 
-            FROM hyperparameters_single_day
-            WHERE settings LIKE '%bu=100000%'
-        """
-
-        df = pd.read_sql_query(query, conn)
-        print(df.tail())
-        print(df.columns)
+        # query = """
+        #     SELECT settings, trial, episode
+        #     FROM hyperparameters_single_day
+        #     WHERE settings LIKE '%bu=100000%'
+        # """
+        #
+        # df = pd.read_sql_query(query, conn)
+        # print(df.tail())
+        # print(df.columns)
         # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
         # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
         # settings = df['settings']
