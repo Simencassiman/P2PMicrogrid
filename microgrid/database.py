@@ -167,6 +167,7 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
 
         cursor.executemany(query, records)
 
+        con.commit()
         cursor.close()
 
 
@@ -179,16 +180,16 @@ if __name__ == '__main__':
         cursor = conn.cursor()
         try:
 
-            # query = """
-            #     SELECT *
-            #     FROM training_progress
-            #     WHERE setting LIKE '%no-com-hetero%'
-            # """
-            #
-            # cursor.execute(query)
-            # df = pd.read_sql_query(query, conn)
+            query = """
+                SELECT *
+                FROM validation_results
+            """
 
-            conn.commit()
+            df = pd.read_sql_query(query, conn)
+            print(df)
+
+            # cursor.execute(query)
+            # conn.commit()
 
         finally:
             cursor.close()

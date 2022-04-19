@@ -343,7 +343,7 @@ max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 2
-setting = f'{nr_agents}-multi-agent-no-com-hetero'
+setting = f'{nr_agents}-multi-agent-no-com-homo'
 
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
