@@ -28,8 +28,9 @@ end = datetime(2021, data_month, end_day) + timedelta(days=1)   # Last day is no
 
 # Define columns with relevant information, used to select from dataframe
 env_cols = ['time', 'temperature']
-agent_cols = ['l0', 'pv']
-cols = env_cols + agent_cols
+agent_cols = ['pv']
+load_cols = ['l0', 'l1']
+cols = env_cols + agent_cols + load_cols
 
 
 def compute_time_slot(time: str) -> int:
@@ -45,7 +46,8 @@ def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['time'] = df['time'] / 96.
 
     # Normalize power
-    df['l0'] = (df['l0'].astype(float) / df['l0'].max().astype(float))
+    for load_col in load_cols:
+        df[load_col] = (df[load_col].astype(float) / df[load_col].max().astype(float))
     df['pv'] = (df['pv'].astype(float) / df['pv'].max().astype(float))
 
     # Select relevant columns
@@ -58,7 +60,7 @@ def get_data_from_csv() -> Tuple[pd.DataFrame, pd.DataFrame]:
     return pd.read_csv('data_env.csv', index_col=0), pd.read_csv('data_agent.csv', index_col=0)
 
 
-def get_data(days: List[int]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def get_data(days: List[int]) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
     con = db.get_connection()
 
     try:
@@ -76,18 +78,20 @@ def get_data(days: List[int]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Process data to match observation data for RL agents
     df = process_dataframe(df)
 
-    return df[env_cols], df[agent_cols]
+    agent_dfs = [df[[l] + agent_cols].rename(columns={l: 'load'}) for l in load_cols]
+
+    return df[env_cols], agent_dfs
 
 
-def get_train_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def get_train_data() -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
     return get_data(training_days)
 
 
-def get_validation_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def get_validation_data() -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
     return get_data(validation_days)
 
 
-def get_test_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def get_test_data() -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
     return get_data(testing_days)
 
 

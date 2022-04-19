@@ -37,7 +37,7 @@ class Prosumer(Production):
         self._time += 1
 
     def get_history(self) -> List[float]:
-        return [p for p, _ in self.pv.production]
+        return [float(p) for p, _ in self.pv.production]
 
     def reset(self) -> None:
         self._production = (p for p in self.pv.production)
