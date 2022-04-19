@@ -205,16 +205,17 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT *
-                FROM load
-                WHERE date LIKE '%-10-%'
+                SELECT *  
+                FROM training_progress
+                WHERE setting LIKE '%hetero%'
             """
 
-            df = pd.read_sql_query(query, conn)
+            # df = pd.read_sql_query(query, conn)
+            #
+            # plt.plot(np.arange(len(df)), df['l0'], df['l1'])
+            # plt.show()
 
-            plt.plot(np.arange(len(df)), df['l0'], df['l1'])
-            plt.show()
-
+            # cursor.execute(query)
             # conn.commit()
 
         except:

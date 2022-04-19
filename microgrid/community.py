@@ -250,6 +250,8 @@ def main(con: sqlite3.Connection) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
+    # for i, agent in enumerate(community.agents):
+    #     agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
 
     env_len = len(env)
     agents_len = len(community.agents)
@@ -262,7 +264,7 @@ def main(con: sqlite3.Connection) -> None:
     # community.init_buffers()
 
     print("Training...")
-    with trange(max_episodes) as episodes:
+    with trange(starting_episodes, max_episodes) as episodes:
         for episode in episodes:
             reward, error = community.train_episode(rewards, losses, _rewards, _losses)
 
@@ -302,9 +304,10 @@ def main(con: sqlite3.Connection) -> None:
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
+starting_episodes = 0
 max_episodes = 1000
 min_episodes_criterion = 50
-save_episodes = 500
+save_episodes = 100
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
