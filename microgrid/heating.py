@@ -144,7 +144,7 @@ class HPHeating(Heating):
 
     def step(self) -> None:
         self._history.append(float(self._t_indoor[0]))
-        self._power_history.append(self.power)
+        self._power_history.append(float(self.power[0]))
         self._t_indoor, self._t_building_mass = self.get_temperature()
         self._t_indoor = self._t_indoor
         self._time += 1

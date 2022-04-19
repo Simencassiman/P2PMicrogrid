@@ -67,6 +67,13 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             PRIMARY KEY (setting, agent, episode) )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS validation_results 
+            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
+            load real, pv real, temperature real, heatpump real, cost real, 
+            PRIMARY KEY (setting, agent, time) )
+        """)
+
     else:
         print('Unable to create tables')
 
@@ -190,6 +197,23 @@ def log_training_progress(con: sqlite3.Connection,
         cursor.close()
 
 
+def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
+                           time: List[float], load: List[float], pv: List[float], temperature: List[float],
+                           heatpump: List[float], cost: List[float]) -> None:
+    if con is not None:
+        cursor = con.cursor()
+
+        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+
+        n = len(load)
+        records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+
+        cursor.executemany(query, records)
+
+        con.commit()
+        cursor.close()
+
+
 if __name__ == '__main__':
 
     # start = datetime(2021, 11, 1)
@@ -205,15 +229,12 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT *  
-                FROM training_progress
-                WHERE setting LIKE '%hetero%'
+                SELECT *     
+                FROM validation_results
             """
 
-            # df = pd.read_sql_query(query, conn)
-            #
-            # plt.plot(np.arange(len(df)), df['l0'], df['l1'])
-            # plt.show()
+            df = pd.read_sql_query(query, conn)
+            print(df)
 
             # cursor.execute(query)
             # conn.commit()
@@ -221,7 +242,8 @@ if __name__ == '__main__':
         except:
             print(traceback.format_exc())
         finally:
-
+            if cursor:
+                cursor.close()
             conn.close()
 
         # query = """
