@@ -295,7 +295,7 @@ class QAgent(RLAgent):
         self._current_state = self._get_observation_state(state, self._current_balance)
 
         self._last_action, q = self.actor.select_action(self._current_state)
-        self.heating.set_power(self._actions[self._last_action])
+        self.heating.set_power(float(self._actions[self._last_action]))
 
         p_out = self._current_balance * self.max_in + self.heating.power
 
@@ -306,7 +306,7 @@ class QAgent(RLAgent):
         new_state = self._get_observation_state(state, current_balance)
 
         action, q = self.actor.greedy_action(new_state)
-        self.heating.set_power(self._actions[action])
+        self.heating.set_power(float(self._actions[action]))
 
         p_out = current_balance * self.max_in + self.heating.power
 

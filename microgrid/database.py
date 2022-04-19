@@ -155,6 +155,23 @@ def log_training_progress(con: sqlite3.Connection,
         cursor.close()
 
 
+def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
+                           time: List[float], load: List[float], pv: List[float], temperature: List[float],
+                           heatpump: List[float], cost: List[float]) -> None:
+    if con is not None:
+        cursor = con.cursor()
+
+        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+
+        n = len(load)
+        records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+
+        cursor.executemany(query, records)
+
+        con.commit()
+        cursor.close()
+
+
 if __name__ == '__main__':
 
     conn = get_connection()

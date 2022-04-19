@@ -4,7 +4,8 @@ from __future__ import annotations
 import collections
 import sqlite3
 import statistics
-from typing import List, Tuple, Callable, Any
+import traceback
+from typing import List, Tuple, Callable, Any, Optional
 import numpy as np
 
 import pandas as pd
@@ -286,10 +287,9 @@ class SingleAgentCommunity(CommunityMicrogrid):
 
         grid_power = grid_power.stack()
 
-        costs = tf.math.reduce_sum(self._compute_costs_individual(grid_power,
-                                                                  buying_price.concat(),
-                                                                  injection_price.concat()),
-                                   axis=0)
+        costs = self._compute_costs_individual(grid_power,
+                                               buying_price.concat(),
+                                               injection_price.concat())
 
         return grid_power, costs
 
@@ -324,7 +324,6 @@ class SingleAgentCommunity(CommunityMicrogrid):
 
 
 def main(con: sqlite3.Connection) -> None:
-    nr_agents = 1
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -369,13 +368,25 @@ def main(con: sqlite3.Connection) -> None:
         agent.set_profiles(agent_load, agent_pv)
     
     power, cost = community.run()
+    cost = tf.math.reduce_sum(cost, axis=0)
 
     print("Analysing...")
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-def load_and_run() -> None:
-    nr_agents = 1
+def save_community_results(con: sqlite3.Connection, setting: str,
+                           community: SingleAgentCommunity, cost: np.ndarray) -> None:
+    time = [float(state[0]) for state, _ in env.data]
+    loads = list(map(lambda l: float(l[0]), community.agent._load))
+    pvs = community.agent.pv.get_history()
+    temperatures = community.agent.heating.get_history()
+    heatpump = community.agent.heating._power_history
+    costs = cost.tolist()
+
+    db.log_validation_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs)
+
+
+def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
@@ -390,6 +401,11 @@ def load_and_run() -> None:
 
     print("Running...")
     power, cost = community.run()
+    cost = tf.math.reduce_sum(cost, axis=0)
+
+    if con:
+        print("Saving...")
+        save_community_results(con, setting, community, cost.numpy())
 
     print("Analysing...")
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
@@ -398,21 +414,22 @@ def load_and_run() -> None:
 max_episodes = 2 * 1000
 min_episodes_criterion = 50
 save_episodes = 500
+nr_agents = 1
+setting = 'single-agent'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 
 
 if __name__ == '__main__':
-    load_and_run()
-    
-    # db_connection = db.get_connection()
-    #
-    # try:
-    #     main(db_connection)
-    # except:
-    #     print("There was a problem during execution")
-    # finally:
-    #     if db_connection:
-    #         db_connection.close()
+
+    db_connection = db.get_connection()
+
+    try:
+        load_and_run(db_connection)
+    except:
+        print(traceback.format_exc())
+    finally:
+        if db_connection:
+            db_connection.close()
 
