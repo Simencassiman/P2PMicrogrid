@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import collections
+import json
 import sqlite3
 import statistics
+import time
 import traceback
 from typing import List, Tuple, Callable, Any, Optional
 import numpy as np
@@ -76,7 +78,10 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
 
 def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(QAgent, n_agents)
+    if implementation == 'tabular':
+        return get_community(QAgent, n_agents)
+    if implementation == 'dqn':
+        return get_community(RLAgent, n_agents)
 
 
 class CommunityMicrogrid:
@@ -293,6 +298,27 @@ class SingleAgentCommunity(CommunityMicrogrid):
 
         return grid_power, costs
 
+    def init_buffers(self) -> None:
+        while not self.agent.trainer.buffer.full:
+            for t, (state, next_state) in enumerate(env.data):
+
+                power_grid, _, p_buy, p_inj, _ = self._run(state, training=True)
+
+                costs = tf.squeeze(self._compute_costs_individual(power_grid,
+                                                                  tf.expand_dims(p_buy, axis=0),
+                                                                  tf.expand_dims(p_inj, axis=0)))
+
+                # Compute reward
+                r = self.agent.get_reward(costs)
+                self.agent.save_memory(r, tf.expand_dims(next_state, axis=0))
+
+                self._step()
+
+            # Reset iterators
+            self.agent.reset()
+
+        self.agent.trainer.initialize_target()
+
     def train_episode(self, all_rewards: tf.TensorArray, all_losses: tf.TensorArray,
                       *args, **kwargs) -> Tuple[float, float]:
         for t, (state, next_state) in enumerate(env.data):
@@ -327,16 +353,19 @@ def main(con: sqlite3.Connection) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
+    community.agent.load_from_file(setting, implementation)
 
     env_len = len(env)
     rewards = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
     losses = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
 
-    # print("Initializing buffers...")
-    # community.init_buffers()
+    if implementation == 'dqn':
+        print("Initializing buffers...")
+        community.init_buffers()
 
     print("Training...")
-    with trange(max_episodes) as episodes:
+    time_start_training = time.time()
+    with trange(starting_episode, max_episodes) as episodes:
         for episode in episodes:
             reward, error = community.train_episode(rewards, losses, None, None)
 
@@ -349,15 +378,18 @@ def main(con: sqlite3.Connection) -> None:
                 print(f'Average reward: {_reward:.3f}. '
                       f'Average error: {_error:.3f}')
 
-                db.log_training_progress(con, 'single-agent-2', 'q-table', episode, _reward, _error)
+                db.log_training_progress(con, setting, implementation, episode, _reward, _error)
                 community.agent.actor.decay_exploration()
 
             if (episode + 1) % save_episodes == 0:
-                np.save('../models_tabular/single_agent_2.npy', community.agent.actor.q_table)
+                community.agent.save_to_file(setting, implementation)
 
         _reward = statistics.mean(episodes_reward)
         _error = statistics.mean(episodes_error)
-        db.log_training_progress(con, 'single-agent-2', 'q-table', episode, _reward, _error)
+        db.log_training_progress(con, setting, implementation, episode, _reward, _error)
+        community.agent.save_to_file(setting, implementation)
+
+    time_end_training = time.time()
 
     print("Running...")
     env_df, agent_df = ds.get_validation_data()
@@ -366,12 +398,36 @@ def main(con: sqlite3.Connection) -> None:
         agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-    
+
+    time_start_run = time.time()
     power, cost = community.run()
+    time_end_run = time.time()
     cost = tf.math.reduce_sum(cost, axis=0)
 
     print("Analysing...")
+    save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+
+
+def save_times(train_time: Optional[float] = None, run_time: Optional[float] = None) -> None:
+    data: dict
+    with open('../data/timing_data.json', 'r') as data_file:
+        data = json.load(data_file)
+
+    if setting in data:
+        if implementation not in data[setting]:
+            data[setting][implementation] = {}
+
+        if train_time:
+            data[setting][implementation]['train'] = train_time
+        if run_time:
+            data[setting][implementation]['run'] = run_time
+    else:
+        data[setting] = {}
+        data[setting][implementation] = {'train': train_time, 'run': run_time}
+
+    with open('../data/timing_data.json', 'w') as data_file:
+        json.dump(data, data_file)
 
 
 def save_community_results(con: sqlite3.Connection, setting: str,
@@ -383,7 +439,7 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     heatpump = community.agent.heating._power_history
     costs = cost.tolist()
 
-    db.log_validation_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs)
+    db.log_validation_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs, implementation)
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
@@ -397,25 +453,30 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
         agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-        agent.actor.set_qtable(np.load(f'../models_tabular/single_agent.npy'))
+        agent.load_from_file(setting, implementation)
 
     print("Running...")
+    time_start_run = time.time()
     power, cost = community.run()
+    time_end_run = time.time()
     cost = tf.math.reduce_sum(cost, axis=0)
 
     if con:
         print("Saving...")
+        save_times(run_time=time_end_run - time_start_run)
         save_community_results(con, setting, community, cost.numpy())
 
     print("Analysing...")
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-max_episodes = 2 * 1000
+starting_episode = 350 + 1
+max_episodes = 1 * 1000
 min_episodes_criterion = 50
-save_episodes = 500
+save_episodes = 100
 nr_agents = 1
 setting = 'single-agent'
+implementation = 'dqn'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -426,7 +487,7 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        load_and_run(db_connection)
+        main(db_connection)
     except:
         print(traceback.format_exc())
     finally:

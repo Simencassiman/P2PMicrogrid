@@ -157,14 +157,15 @@ def log_training_progress(con: sqlite3.Connection,
 
 def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
-                           heatpump: List[float], cost: List[float]) -> None:
+                           heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?)"
 
         n = len(load)
-        records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+        records = [*zip([setting] * n, [agent_id] * n, time, load, pv,
+                        temperature, heatpump, cost, [implementation] * n)]
 
         cursor.executemany(query, records)
 
@@ -186,15 +187,18 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT setting
+                SELECT episode 
                 FROM training_progress
+                WHERE agent = 'dqn'
             """
 
             df = pd.read_sql_query(query, conn)
-            print(df.nunique())
-            print(df.columns)
+            # print(df.nunique())
+            print(df)
+            # print(df.columns)
 
-            conn.commit()
+            # cursor.execute(query)
+            # conn.commit()
 
         finally:
             conn.close()

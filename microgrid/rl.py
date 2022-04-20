@@ -57,6 +57,12 @@ class QActor:
     def set_qtable(self, q_table: np.ndarray) -> None:
         self._q_table = q_table
 
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.set_qtable(np.load(f'../models_{implementation}/{setting}.npy'))
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        np.save(f'../models_{implementation}/{setting}.npy', self.q_table)
+
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
         temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
@@ -128,6 +134,12 @@ class ActorModel:
     def q_network(self) -> QNetwork:
         return self._q_network
 
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self._q_network.load_weights(f'../models_{implementation}/{setting}')
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self._q_network.save_weights(f'../models_{implementation}/{setting}')
+
     def __call__(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         return self.select_action(state)
 
@@ -166,6 +178,10 @@ class ReplayBuffer:
         self.count = 0
         self.buffer: Deque[Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]] \
             = collections.deque(maxlen=buffer_size)
+
+    @property
+    def full(self) -> bool:
+        return self.count == self.buffer_size
 
     def add(self, s: tf.Tensor, a: tf.Tensor, r: tf.Tensor, ns: tf.Tensor) -> None:
         experience = (s, a, r, ns)
@@ -312,6 +328,12 @@ class Trainer:
         self._soft_update(self.actor.q_network.trainable_weights,
                           self.target_network.trainable_weights,
                           self._tau)
+
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.target_network.load_weights(f'../models_{implementation}/{setting}_target')
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self.target_network.save_weights(f'../models_{implementation}/{setting}_target')
 
 
 # ------- Set up training procedure ------- #

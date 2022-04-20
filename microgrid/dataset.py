@@ -109,9 +109,9 @@ nr_actions = 1
 
 if __name__ == '__main__':
     a = np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[9, 10], [11, 12]]])
-    # np.save('../models_tabular/single_agent.npy', a)
+    # np.save('../models_tabular/single_agent_0.npy', a)
 
-    aa = np.load('../models_tabular/single_agent.npy')
+    aa = np.load('../models_tabular/single_agent_0.npy')
 
     print(a)
     print(type(a))

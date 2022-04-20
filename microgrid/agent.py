@@ -1,13 +1,13 @@
 # Python Libraries
-from typing import List, Tuple, Generator, Optional
+import re
+from typing import List, Tuple, Generator
 from abc import ABC, abstractmethod
 import numpy as np
 import tensorflow as tf
 
 # Local modules
-from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
+from config import TIME_SLOT, HOURS_PER_DAY, CENTS_PER_EURO
 import config as cf
-from controller import BackupController, BuildingController, ChargingController
 from production import Production
 from storage import Storage
 from heating import Heating
@@ -172,9 +172,9 @@ class RLAgent(ActingAgent):
         super(RLAgent, self).__init__(*args, **kwargs)
         # self.backup = controller
 
-        self.actor = rl.ActorModel(1)
+        self.actor = rl.ActorModel(epsilon=0.4782969)
         self.trainer = rl.Trainer(self.actor,
-                                  buffer_size=5 * 1000, batch_size=32,
+                                  buffer_size=20 * 1000, batch_size=32,
                                   gamma=0.95, tau=0.005,
                                   optimizer=tf.optimizers.Adam(learning_rate=1e-5)
         )
@@ -274,6 +274,13 @@ class RLAgent(ActingAgent):
     def _communicate(self) -> List:
         pass
 
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.actor.load_from_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
+        self.trainer.load_from_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self.actor.save_to_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
+        self.trainer.save_to_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
 
 class QAgent(RLAgent):
 
@@ -286,7 +293,7 @@ class QAgent(RLAgent):
         self._num_balance_states = 20
 
         self._actions = np.array([0., 0.5, 1.])
-        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states, decay=0.95)
+        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states, decay=0.9)
 
         self._last_action: int = -1
 
@@ -319,5 +326,12 @@ class QAgent(RLAgent):
         return 0.
 
     def save_memory(self, reward: tf.Tensor, next_state: tf.Tensor) -> None: ...
+
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.actor.load_from_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self.actor.save_to_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
+
 
 
