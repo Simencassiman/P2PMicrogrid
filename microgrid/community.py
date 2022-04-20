@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import collections
+import json
 import re
 import sqlite3
 import statistics
+import time
 import traceback
 from typing import List, Tuple, Callable, Any, Optional
 import numpy as np
@@ -24,6 +26,9 @@ from heating import HPHeating, HeatPump
 from data_analysis import analyse_community_output
 import dataset as ds
 import database as db
+
+
+np.random.seed(42)
 
 
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
@@ -260,6 +265,8 @@ def main(con: sqlite3.Connection) -> None:
     # print("Initializing buffers...")
     # community.init_buffers()
 
+    time_start_training = time.time()
+
     print("Training...")
     with trange(starting_episodes, max_episodes) as episodes:
         for episode in episodes:
@@ -289,6 +296,8 @@ def main(con: sqlite3.Connection) -> None:
         for i, agent in enumerate(community.agents):
             np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
 
+    time_end_training = time.time()
+
     print("Running...")
     env_df, agent_dfs = ds.get_validation_data()
     env.setup(ds.dataframe_to_dataset(env_df))
@@ -296,12 +305,32 @@ def main(con: sqlite3.Connection) -> None:
         agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-    
+
+    time_start_run = time.time()
     power, cost = community.run()
+    time_end_run = time.time()
     cost = tf.math.reduce_sum(cost, axis=0)
 
     print("Analysing...")
+    save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+
+
+def save_times(train_time: Optional[float] = None, run_time: Optional[float] = None) -> None:
+    data: dict
+    with open('../data/timing_data.json', 'r') as data_file:
+        data = json.load(data_file)
+
+    if 'setting' in data:
+        if train_time:
+            data[setting]['train'] = train_time
+        if run_time:
+            data[setting]['run'] = run_time
+    else:
+        data[setting] = {'train': train_time, 'run': run_time}
+
+    with open('../data/timing_data.json', 'w') as data_file:
+        json.dump(data, data_file)
 
 
 def save_community_results(con: sqlite3.Connection, setting: str,
@@ -331,11 +360,14 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
         agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
 
     print("Running...")
+    time_start_run = time.time()
     power, cost = community.run()
+    time_end_run = time.time()
 
     if con:
         print("Saving...")
-        save_community_results(con, setting, community, cost.numpy())
+        save_times(run_time=time_end_run - time_start_run)
+        # save_community_results(con, setting, community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
 

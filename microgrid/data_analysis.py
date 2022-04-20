@@ -1,10 +1,13 @@
 # Python Libraries
+import re
+from math import floor
 from typing import List
 import json
 from datetime import datetime
 from calendar import monthrange
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mc  # For the legend
 from matplotlib.cm import ScalarMappable    # For the legend
@@ -12,6 +15,10 @@ from matplotlib.cm import ScalarMappable    # For the legend
 # Local modules
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
 from agent import ActingAgent
+import database as db
+
+
+np.random.seed(42)
 
 
 def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
@@ -81,6 +88,7 @@ def plot_costs(agent_ids: List, costs: np.ndarray, width: float) -> None:
     plt.ylabel("Cost [€]")
     plt.legend()
 
+
 def plot_selfconsumption(agent_ids: List, self_consumption: np.ndarray, production: np.ndarray, width: float) -> None:
     plt.figure()
     plt.bar(agent_ids, self_consumption.sum(axis=0) / production.sum(axis=0) * 100, width)
@@ -131,6 +139,76 @@ def plot_grid_load(power: np.ndarray) -> None:
     # Set legend label
     cb.set_label("Power [kW]", size=12)
 
+
+def get_profiles_type(setting: str) -> str:
+    if setting == 'single-agent':
+        s = 'homo'
+    else:
+        s = re.match(r'.*-([a-z]+)$', setting).groups()[0]
+
+    return s + 'geneous'
+
+def get_setting_type(setting: str) -> str:
+    return re.match(r'([0-9]-){0,1}([a-z-]+)-[a-z]+$', setting).groups()[1]
+
+def plot_tabular_comparison() -> None:
+    # groups = [[23, 135, 3], [123, 500, 1]]
+    # group_labels = ['views', 'orders']
+    # df = pd.DataFrame(groups, index=group_labels).T
+
+    # Convert data to pandas DataFrame.
+    con = db.get_connection()
+    try:
+        df = db.get_validation_results(con)
+    except:
+        pass
+    finally:
+        if con:
+            con.close()
+
+    df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
+    df['time'] = df['time'].map(lambda t: t * 24)
+    df['heatpump'] *= 1e-3
+
+    costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum().groupby('setting').mean()
+    costs['profiles'] = list(map(lambda s: get_profiles_type(s), costs.index.tolist()))
+    costs['setting'] = list(map(lambda s: get_setting_type(s), costs.index.tolist()))
+    costs = costs.pivot(index='setting', columns='profiles', values='cost')
+
+    costs.plot.bar()
+    plt.xticks(rotation=0)
+    plt.ylabel("Cost [€]")
+    plt.title("Average price payed")
+
+    df[df['setting'] == '2-multi-agent-com-hetero']\
+        .pivot(index='time', columns='agent', values=['load', 'pv'])\
+        .plot.line()
+    plt.title("Heterogeneous")
+    plt.ylabel("Power [kW]")
+
+    df[df['setting'] == '2-multi-agent-com-hetero'] \
+        .pivot(index='time', columns='agent', values=['temperature']) \
+        .plot.line()
+    plt.title("Indoor temperatures")
+    plt.ylabel("Temperature [°C]")
+
+    plt.figure()
+    df[df['setting'] == '2-multi-agent-com-hetero'][df['agent'] == 0]['heatpump'].plot(kind='bar', width=1)
+    plt.gca().axes.get_xaxis().set_ticks([int(t / 24 * 96) for t in range(24) if t % 5 == 0])
+    plt.gca().axes.get_xaxis().set_ticklabels([t for t in range(24) if t % 5 == 0])
+    plt.ylabel("Power [kW]")
+    plt.title("Heat pump activity")
+
+    plt.show()
+    # print(df)
+    #
+    # # Plot.
+    # pd.concat(
+    #     [df.mean().rename('average'), df.min().rename('min'),
+    #      df.max().rename('max')],
+    #     axis=1).plot.bar()
+    #
+    # plt.show()
 
 def show_raw_load(path='data/data.json'):
     with open(path) as file:
@@ -198,17 +276,6 @@ def expand_irradiation() -> None:
 
 
 if __name__ == "__main__":
-    # normalize_data()
-    # show_clean_load('data/profiles_1.json')
-    with open('../data/profiles.json') as file:
-        data = json.load(file)
-
-        plt.plot(data['time'], data['loads'])
-        plt.plot(data['time'], data['pv'])
-        plt.plot(data['time'], data['temperature'])
-
-        plt.legend(["Load", "PV", "Temp"])
-        plt.show()
-    # print('Nothing to do...')
+    plot_tabular_comparison()
 
 

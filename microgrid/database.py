@@ -2,7 +2,7 @@
 import sqlite3
 import os.path as osp
 import traceback
-from typing import List
+from typing import List, Union
 import matplotlib.pyplot as plt
 import re
 
@@ -212,6 +212,20 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
 
         con.commit()
         cursor.close()
+
+
+def get_validation_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT *
+            FROM validation_results
+        """
+
+        df = pd.read_sql_query(query, con)
+
+        return df
+
+    return None
 
 
 if __name__ == '__main__':
