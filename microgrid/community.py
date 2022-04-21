@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 # Local Modules
 from environment import env
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
-from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent
+from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent, DQNAgent
 from production import Prosumer, PV
 from storage import NoStorage
 from heating import HPHeating, HeatPump
@@ -28,7 +28,10 @@ import dataset as ds
 import database as db
 
 
-np.random.seed(42)
+# ------- Parameter setup ------- #
+seed = 42
+tf.random.set_seed(seed)
+np.random.seed(seed)
 
 
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
@@ -77,7 +80,7 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
     # Prepare environment
     env.setup(ds.dataframe_to_dataset(env_df))
 
-    return CommunityMicrogrid(timeline, agents)
+    return CommunityMicrogrid(timeline, agents, rounds)
 
 
 def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
@@ -85,19 +88,22 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
 
 
 def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(QAgent, n_agents)
+    if implementation == 'tabular':
+        return get_community(QAgent, n_agents)
+    if implementation == 'dqn':
+        return get_community(DQNAgent, n_agents)
 
 
 class CommunityMicrogrid:
 
-    def __init__(self, timeline: pd.DataFrame, agents: List[ActingAgent]) -> None:
+    def __init__(self, timeline: pd.DataFrame, agents: List[ActingAgent], rounds: int) -> None:
         self.timeline = timeline
         self.time_length = len(timeline)
         self.agents = agents
         self.grid = GridAgent()
         self.q = np.zeros((len(env), len(agents), 3))
 
-        self._rounds = 1
+        self._rounds = rounds
 
     def _assign_powers(self, p2p_power: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         p_match = tf.where(tf.math.sign(p2p_power) != tf.math.sign(tf.transpose(p2p_power)),
@@ -177,7 +183,7 @@ class CommunityMicrogrid:
         return grid_power + peer_power, costs
 
     def init_buffers(self) -> None:
-        for _ in range(1):
+        for _ in range(5):
             for t, (state, next_state) in enumerate(env.data):
 
                 power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(state, training=True)
@@ -248,12 +254,13 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main(con: sqlite3.Connection) -> None:
+def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
-    # for i, agent in enumerate(community.agents):
-    #     agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
+    if load_agents:
+        for agent in community.agents:
+            agent.load_from_file(setting, implementation)
 
     env_len = len(env)
     agents_len = len(community.agents)
@@ -262,8 +269,9 @@ def main(con: sqlite3.Connection) -> None:
     _rewards = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
     _losses = tf.TensorArray(dtype=tf.float32, size=agents_len, dynamic_size=False)
 
-    # print("Initializing buffers...")
-    # community.init_buffers()
+    if implementation == 'dqn':
+        print("Initializing buffers...")
+        community.init_buffers()
 
     time_start_training = time.time()
 
@@ -284,17 +292,17 @@ def main(con: sqlite3.Connection) -> None:
                 for agent in community.agents:
                     agent.actor.decay_exploration()
 
-                db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
+                db.log_training_progress(con, setting, implementation, episode, _reward, _error)
 
             if (episode + 1) % save_episodes == 0:
-                for i, agent in enumerate(community.agents):
-                    np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
+                for agent in community.agents:
+                    agent.save_to_file(setting, implementation)
 
         _reward = statistics.mean(episodes_reward)
         _error = statistics.mean(episodes_error)
-        db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
-        for i, agent in enumerate(community.agents):
-            np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
+        db.log_training_progress(con, setting, implementation, episode, _reward, _error)
+        for agent in community.agents:
+            agent.save_to_file(setting, implementation)
 
     time_end_training = time.time()
 
@@ -343,7 +351,7 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_validation_results(con, setting, i, time, *data)
+        db.log_validation_results(con, setting, i, time, *data, implementation)
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
@@ -357,7 +365,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
         agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-        agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
+        agent.load_from_file(setting, implementation)
 
     print("Running...")
     time_start_run = time.time()
@@ -367,7 +375,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     if con:
         print("Saving...")
         save_times(run_time=time_end_run - time_start_run)
-        # save_community_results(con, setting, community, cost.numpy())
+        save_community_results(con, setting, community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
 
@@ -379,8 +387,10 @@ starting_episodes = 0
 max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
-nr_agents = 2
+nr_agents = 5
+rounds = 1
 setting = f'{nr_agents}-multi-agent-com-hetero'
+implementation = 'tabular'
 
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -392,7 +402,7 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        load_and_run(db_connection)
+        main(db_connection)
     except Exception:
         print(traceback.format_exc())
     finally:

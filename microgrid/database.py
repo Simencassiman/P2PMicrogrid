@@ -42,7 +42,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS load
             (date text NOT NULL, time text NOT NULL, utc text NOT NULL, 
-            l0 real, l1 real, 
+            l0 real, l1 real, l2 real, l3 real, l4 real, 
             PRIMARY KEY (date, time, utc) )
         """)
 
@@ -123,7 +123,7 @@ def generate_additional_load(con: sqlite3) -> None:
                     """
         query_2 = """
                         UPDATE load
-                        SET l1 = ?
+                        SET l4 = ?
                         WHERE date = ? AND time = ? AND utc = ?
                     """
 
@@ -199,14 +199,15 @@ def log_training_progress(con: sqlite3.Connection,
 
 def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
-                           heatpump: List[float], cost: List[float]) -> None:
+                           heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?)"
 
         n = len(load)
-        records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+        records = [*zip([setting] * n, [agent_id] * n, time, load, pv,
+                        temperature, heatpump, cost, [implementation] * n)]
 
         cursor.executemany(query, records)
 
@@ -244,7 +245,8 @@ if __name__ == '__main__':
 
             query = """
                 SELECT *     
-                FROM validation_results
+                FROM load
+                WHERE date LIKE '%-10-%'
             """
 
             df = pd.read_sql_query(query, conn)

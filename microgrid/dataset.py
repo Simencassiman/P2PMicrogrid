@@ -34,7 +34,7 @@ end = datetime(2021, data_month, end_day) + timedelta(days=1)   # Last day is no
 # Define columns with relevant information, used to select from dataframe
 env_cols = ['time', 'temperature']
 agent_cols = ['pv']
-load_cols = ['l0', 'l1']
+load_cols = ['l0', 'l1', 'l2', 'l3', 'l4']
 cols = env_cols + agent_cols + load_cols
 
 

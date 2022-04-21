@@ -1,4 +1,5 @@
 # Python Libraries
+from abc import ABC, abstractmethod
 from typing import Tuple, Deque
 import collections
 import statistics
@@ -31,7 +32,27 @@ eps = np.finfo(np.float32).eps.item()
 
 
 # ------- Create models ------- #
-class QActor:
+class ActorInterface(ABC):
+    @abstractmethod
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]: ...
+
+    @abstractmethod
+    def select_action(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]: ...
+
+    @abstractmethod
+    def greedy_action(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]: ...
+
+    @abstractmethod
+    def load_from_file(self, setting: str, implementation: str) -> None: ...
+
+    @abstractmethod
+    def save_to_file(self, setting: str, implementation: str) -> None: ...
+
+    @abstractmethod
+    def decay_exploration(self) -> None: ...
+
+
+class QActor(ActorInterface):
 
     def __init__(self, num_time_states: int, num_temperature_states: int, num_balance_states: int,
                  num_p2p_states: int, num_actions: int = 3, gamma: float = 0.9,
@@ -58,6 +79,12 @@ class QActor:
     def set_qtable(self, q_table: np.ndarray) -> None:
         self._q_table = q_table
 
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.set_qtable(np.load(f'../models_{implementation}/{setting}.npy'))
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        np.save(f'../models_{implementation}/{setting}.npy', self.q_table)
+
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
         temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
@@ -66,17 +93,20 @@ class QActor:
 
         return time, temperature, balance, p2p
 
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
+        return self.select_action(state)
+
     def select_action(self, state: tf.Tensor) -> Tuple[int, float]:
         if np.random.rand() < self._epsilon:
             # Explore
-            action, q = self.random_action(state)
+            action, q = self.random_action()
         else:
             # Exploit
             action, q = self.greedy_action(state)
 
         return action, q
 
-    def random_action(self, *args) -> Tuple[int, float]:
+    def random_action(self) -> Tuple[int, float]:
         return np.random.choice(self._num_actions), 0.
 
     def greedy_action(self, state: tf.Tensor) -> Tuple[int, float]:
@@ -117,7 +147,7 @@ class QNetwork(keras.Model):
         return self._layers(self.concat([state, action]))
 
 
-class ActorModel:
+class ActorModel(ActorInterface):
     def __init__(self, epsilon: float = 0.1):
         self.actions = tf.convert_to_tensor([0., 0.5, 1.])
 
@@ -130,7 +160,13 @@ class ActorModel:
     def q_network(self) -> QNetwork:
         return self._q_network
 
-    def __call__(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self._q_network.load_weights(f'../models_{implementation}/{setting}')
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self._q_network.save_weights(f'../models_{implementation}/{setting}')
+
+    def __call__(self, state: tf.Tensor, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         return self.select_action(state)
 
     def select_action(self, state: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
@@ -237,6 +273,12 @@ class Trainer:
         _ = self.actor.q_network(s, a)
         _ = self.target_network(s, a)
         self._soft_update(self.actor.q_network.trainable_weights, self.target_network.trainable_weights)
+
+    def load_from_file(self, setting: str, implementation: str) -> None:
+        self.target_network.load_weights(f'../models_{implementation}/{setting}_target')
+
+    def save_to_file(self, setting: str, implementation: str) -> None:
+        self.target_network.save_weights(f'../models_{implementation}/{setting}_target')
 
     def train_episode(self) -> float:
 
