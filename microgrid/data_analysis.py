@@ -62,7 +62,7 @@ def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
         plt.ylabel("Temperature [°C]")
 
         plt.figure(3*i + 6)
-        plt.plot(time[:slots_per_day], hp[:slots_per_day] * 100)
+        plt.plot(time[:slots_per_day], hp[:slots_per_day])
         plt.xticks(time_ticks, time_labels)
         plt.title(f"Heat Pump Power (agent {i})")
         plt.xlabel("Time")
@@ -80,6 +80,7 @@ def plot_costs(agent_ids: List, costs: np.ndarray, width: float) -> None:
     plt.xlabel("Agent")
     plt.ylabel("Cost [€]")
     plt.legend()
+
 
 def plot_selfconsumption(agent_ids: List, self_consumption: np.ndarray, production: np.ndarray, width: float) -> None:
     plt.figure()

@@ -55,6 +55,17 @@ def temperature_simulation(t_out: float, t_in: float, t_bm: float,
     return t_in_new, t_m_new
 
 
+def required_power(t_in: float, t_bm: float, hp_cop: float) -> float:
+    t_out = env.temperature
+
+    hp_power = - (
+            1 / Ri * (t_bm - t_in)
+            + 1 / Rvent * (t_out - t_in)
+    ) / ((1 - f_rad) * hp_cop)
+
+    return hp_power
+
+
 class Heating(ElectricalAsset):
 
     @property
