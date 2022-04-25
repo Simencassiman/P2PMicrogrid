@@ -229,43 +229,49 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
         plt.savefig(f'{cf.PLOTS_PATH}/day_plot.svg', format='svg')
 
 
+def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
+    df['episode'] = df['episode'].astype(int)
+    episodes = df[df['episode'] <= 1000] \
+        .pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
+
+    fig, ax = plt.subplots()
+    ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color='#004079ff')
+    # ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'dqn')], '-', color='#51bcebff')
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
+            '--', color='#004079ff')
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-hetero', 'tabular')],
+            '--', color='#51bcebff')
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-homo', 'tabular')],
+            '-.', color='#004079ff')
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-hetero', 'tabular')],
+            '-.', color='#51bcebff')
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-hetero', 'tabular')],
+            ':', color='#004079ff')
+    ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
+               '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'])
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Reward")
+
+    if save_fig:
+        plt.savefig(f'{cf.PLOTS_PATH}/learning.svg', format='svg')
+
+
 def plot_tabular_comparison(save_figs: bool = False) -> None:
 
     con = db.get_connection()
 
     try:
         df = db.get_training_progress(con)
-        df['episode'] = df['episode'].astype(int)
-        episodes = df[df['episode'] <= 1000]\
-            .pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
-
-        fig, ax = plt.subplots()
-        ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color='#004079ff')
-        # ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'dqn')], '-', color='#51bcebff')
-        ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
-                '--', color='#004079ff')
-        ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-hetero', 'tabular')],
-                '--', color='#51bcebff')
-        ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-homo', 'tabular')],
-                '-.', color='#004079ff')
-        ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-hetero', 'tabular')],
-                '-.', color='#51bcebff')
-        ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-hetero', 'tabular')],
-                ':', color='#004079ff')
-        ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
-                   '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'])
-        ax.set_xlabel("Episodes")
-        ax.set_ylabel("Reward")
+        # make_learning_plot(df, save_figs)
 
         df = db.get_validation_results(con)
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
 
-        # make_costs_plot(df, save_figs)
+        make_costs_plot(df, save_figs)
         # make_day_plot(df, save_figs)
 
-        plt.savefig('../plots/learning.svg', format='svg')
         plt.show()
 
     except:
