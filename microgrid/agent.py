@@ -292,7 +292,7 @@ class QAgent(RLAgent):
         self._num_p2p_states = 20
 
         actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states,
-                          self._num_p2p_states, decay=0.9)
+                          self._num_p2p_states, decay=0.95)
 
         super(QAgent, self).__init__(actor, *args, **kwargs)
 

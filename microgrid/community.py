@@ -384,10 +384,10 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
 
 starting_episodes = 0
-max_episodes = 1000
+max_episodes = 2 * 1000
 min_episodes_criterion = 50
 save_episodes = 100
-nr_agents = 5
+nr_agents = 4
 rounds = 1
 setting = f'{nr_agents}-multi-agent-com-hetero'
 implementation = 'tabular'
