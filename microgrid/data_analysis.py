@@ -19,7 +19,14 @@ from agent import ActingAgent
 import database as db
 
 
+# Config
 np.random.seed(42)
+
+primary_color = '#004079ff'
+secondary_color = '#51bcebff'
+tertiary_color = '#1d8dafff'
+neutral_color = '#ccc'
+base_color = '#2f4d5dff'
 
 
 def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
@@ -164,17 +171,26 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     width = 0.35  # the width of the bars
 
     fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color='#004079ff')
-    rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color='#51bcebff')
+    rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color=primary_color)
+    rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
+    ax.axhline(y=0.82, color=neutral_color, linestyle='--')
+    ax.text(1.38, 0.75, 'Semi-intelligent', color=base_color)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel('Cost [€]')
-    ax.set_title('Average cost payed by an agent')
+    ax.set_ylabel('Cost [€]', color=base_color)
+    ax.set_title('Average cost payed by an agent', color=base_color)
     ax.set_xticks(x, costs.index)
-    ax.legend()
+    ax.bar_label(rects1, padding=3, color=base_color)
+    ax.bar_label(rects2, padding=3, color=base_color)
 
-    ax.bar_label(rects1, padding=3)
-    ax.bar_label(rects2, padding=3)
+    # Additional coloring
+    ax.spines['bottom'].set_color(base_color)
+    ax.spines['top'].set_color(base_color)
+    ax.spines['right'].set_color(base_color)
+    ax.spines['left'].set_color(base_color)
+    ax.tick_params(axis='x', colors=base_color)
+    ax.tick_params(axis='y', colors=base_color)
+    ax.legend(labelcolor=base_color)
 
     fig.tight_layout()
 
@@ -198,32 +214,41 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     p2p_price = (grid_price + injection_price) / 2
 
     fig, ax = plt.subplots(4, 1, figsize=(9, 6), sharex=True)
-    fig.suptitle("Agent's state and decisions throughout the day")
+    fig.suptitle("Agent's state and decisions throughout the day", color=base_color)
 
     # Powers
-    ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color='#004079ff')
-    ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], color='#51bcebff')
+    ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=primary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], color=secondary_color)
     ax[0].set_yticks([0, 2, 4], [0.0, 2.0, 4.0])
-    ax[0].set_ylabel("Power [kW]")
-    ax[0].legend(["Load", "PV"], loc='upper right')
+    ax[0].set_ylabel("Power [kW]", color=base_color)
+    ax[0].legend(["Load", "PV"], loc='upper right', labelcolor=base_color)
 
     # Prices
-    ax[1].plot(time, grid_price, color='#004079ff')
-    ax[1].plot(time, injection_price, color='#51bcebff')
-    ax[1].plot(time, p2p_price, '--', color='#1d8dafff')
-    ax[1].set_ylabel("Price [€]")
-    ax[1].legend(["Offtake", "Injection", "P2P"], loc='upper right')
+    ax[1].plot(time, grid_price, color=primary_color)
+    ax[1].plot(time, injection_price, color=secondary_color)
+    ax[1].plot(time, p2p_price, '--', color=tertiary_color)
+    ax[1].set_ylabel("Price [€]", color=base_color)
+    ax[1].legend(["Offtake", "Injection", "P2P"], loc='upper right', labelcolor=base_color)
 
     # Heat pump
-    ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color='#004079ff')
-    ax[2].set_ylabel("Power [kW]")
+    ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
+    ax[2].set_ylabel("HP [kW]", color=base_color)
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
 
     # Temperature
-    ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color='#004079ff')
-    ax[3].set_ylabel("Temperature [°C]")
+    ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
+    ax[3].set_ylabel("Temperature [°C]", color=base_color)
     ax[3].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
-    ax[3].set_xlabel("Time")
+    ax[3].set_xlabel("Time", color=base_color)
+
+    # Additional coloring
+    for i in range(len(ax)):
+        ax[i].spines['bottom'].set_color(base_color)
+        ax[i].spines['top'].set_color(base_color)
+        ax[i].spines['right'].set_color(base_color)
+        ax[i].spines['left'].set_color(base_color)
+        ax[i].tick_params(axis='x', colors=base_color)
+        ax[i].tick_params(axis='y', colors=base_color)
 
     if save_fig:
         plt.savefig(f'{cf.PLOTS_PATH}/day_plot.svg', format='svg')
@@ -235,22 +260,34 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
         .pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
 
     fig, ax = plt.subplots()
-    ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color='#004079ff')
-    # ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'dqn')], '-', color='#51bcebff')
+    fig.suptitle("Running rewards during training", color=base_color)
+    ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color=primary_color)
+    # ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'dqn')], '-', color=secondary_color')
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
-            '--', color='#004079ff')
+            '--', color=primary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-hetero', 'tabular')],
-            '--', color='#51bcebff')
+            '--', color=secondary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-homo', 'tabular')],
-            '-.', color='#004079ff')
+            '-.', color=primary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-hetero', 'tabular')],
-            '-.', color='#51bcebff')
+            '-.', color=secondary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-hetero', 'tabular')],
-            ':', color='#004079ff')
+            ':', color=primary_color)
     ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
-               '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'])
-    ax.set_xlabel("Episodes")
-    ax.set_ylabel("Reward")
+               '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'],
+              labelcolor=base_color)
+    ax.set_xlabel("Episodes", color=base_color)
+    ax.set_ylabel("Reward", color=base_color)
+
+    # Additional coloring
+    ax.spines['bottom'].set_color(base_color)
+    ax.spines['top'].set_color(base_color)
+    ax.spines['right'].set_color(base_color)
+    ax.spines['left'].set_color(base_color)
+    ax.tick_params(axis='x', colors=base_color)
+    ax.tick_params(axis='y', colors=base_color)
+
+    fig.tight_layout()
 
     if save_fig:
         plt.savefig(f'{cf.PLOTS_PATH}/learning.svg', format='svg')
@@ -262,7 +299,7 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
 
     try:
         df = db.get_training_progress(con)
-        # make_learning_plot(df, save_figs)
+        make_learning_plot(df, save_figs)
 
         df = db.get_validation_results(con)
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
@@ -270,7 +307,7 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
         df['heatpump'] *= 1e-3
 
         make_costs_plot(df, save_figs)
-        # make_day_plot(df, save_figs)
+        make_day_plot(df, save_figs)
 
         plt.show()
 
@@ -347,6 +384,6 @@ def expand_irradiation() -> None:
 
 
 if __name__ == "__main__":
-    plot_tabular_comparison()
+    plot_tabular_comparison(True)
 
 
