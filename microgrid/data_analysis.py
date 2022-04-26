@@ -175,6 +175,8 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
     ax.axhline(y=0.82, color=neutral_color, linestyle='--')
     ax.text(1.38, 0.75, 'Semi-intelligent', color=base_color)
+    ax.axhline(y=1.63, color=neutral_color, linestyle='--')
+    ax.text(1.5, 1.55, 'Rule-based', color=base_color)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_ylabel('Cost [€]', color=base_color)
@@ -384,6 +386,6 @@ def expand_irradiation() -> None:
 
 
 if __name__ == "__main__":
-    plot_tabular_comparison(True)
+    plot_tabular_comparison()
 
 
