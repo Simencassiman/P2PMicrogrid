@@ -128,13 +128,13 @@ class RuleAgent(ActingAgent):
         # Combine load with solar generation
         current_load, _ = next(self.load)
         current_pv, _ = self.pv.production
-        current_balance = current_load - current_pv
+        current_balance = tf.expand_dims(current_load - current_pv, axis=0)
 
         # Combine balance with heating
-        current_power = current_balance + self.heating.power
+        current_power = current_balance + tf.squeeze(self.heating.power)
 
         # return resulting in/output to grid
-        return current_power, tf.constant([0.])
+        return current_power, tf.constant([0])
 
     def _update_heating(self) -> None:
         temperature = self.heating.temperature

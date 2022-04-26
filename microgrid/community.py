@@ -448,8 +448,9 @@ def save_community_results(con: sqlite3.Connection, setting: str,
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
+    community = get_rule_based_community(nr_agents)
     # community = get_rl_based_community(nr_agents)
-    community = get_baseline_community()
+    # community = get_baseline_community()
 
     env_df, agent_df = ds.get_validation_data()
     env.setup(ds.dataframe_to_dataset(env_df))
@@ -480,7 +481,7 @@ min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'dqn'
+implementation = 'rule'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
