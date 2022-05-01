@@ -173,25 +173,25 @@ class BaselineAgent(ActingAgent):
     def __init__(self, *args, **kwargs) -> None:
         super(BaselineAgent, self).__init__(*args, **kwargs)
 
-        self._hp_power = np.array([   0,           0,           0,           0,           0,    0,         204.1183166, 223.3856048, 242.4940185, 262.3419799, 3000,        3000,           0,           0,           0,    0,           0,           0,         321.2681884, 336.4851074,  351.5411071, 368.080383,  384.471527,  400.7154846, 416.8153686,  429.7907409, 442.6157836, 455.2926330, 467.8244018, 481.8542175,  495.749481,  509.5132751, 523.1467895, 518.6010131, 513.8638305,  508.9374389, 503.8260803, 478.0937,    452.1070861, 734.245666, 1256.591674, 1599.0556640, 353.7709350, 330.6316223,2471.9882812,  290.1255493, 272.7893066, 255.2711639, 237.5742950,3000,  196.872741,  176.2528686, 155.4573669, 141.9486694, 128.2969970, 3000,         100.5762329,  92.0312118,   0,        3000,    0,           0,           0,           0,           0,  992.1799926,   0,           0,         322.2501220,  75.5588378,  184.4559326, 118.2068,    138.3226928, 157.3858032, 176.4374542,  195.4774322, 214.5069274, 225.4690399, 236.3911743, 247.273437,  258.116668,  267.2800903, 276.4003906, 285.477600,  294.5127868,  302.6107788, 310.6646118, 318.67535,   326.6430053, 332.480041,  338.267700,  344.0069885, 349.6990051, 346.3937377, 343.0097351,  339.54888916])
+        # self._hp_power = np.array([   0,           0,           0,           0,           0,    0,         204.1183166, 223.3856048, 242.4940185, 262.3419799, 3000,        3000,           0,           0,           0,    0,           0,           0,         321.2681884, 336.4851074,  351.5411071, 368.080383,  384.471527,  400.7154846, 416.8153686,  429.7907409, 442.6157836, 455.2926330, 467.8244018, 481.8542175,  495.749481,  509.5132751, 523.1467895, 518.6010131, 513.8638305,  508.9374389, 503.8260803, 478.0937,    452.1070861, 734.245666, 1256.591674, 1599.0556640, 353.7709350, 330.6316223,2471.9882812,  290.1255493, 272.7893066, 255.2711639, 237.5742950,3000,  196.872741,  176.2528686, 155.4573669, 141.9486694, 128.2969970, 3000,         100.5762329,  92.0312118,   0,        3000,    0,           0,           0,           0,           0,  992.1799926,   0,           0,         322.2501220,  75.5588378,  184.4559326, 118.2068,    138.3226928, 157.3858032, 176.4374542,  195.4774322, 214.5069274, 225.4690399, 236.3911743, 247.273437,  258.116668,  267.2800903, 276.4003906, 285.477600,  294.5127868,  302.6107788, 310.6646118, 318.67535,   326.6430053, 332.480041,  338.267700,  344.0069885, 349.6990051, 346.3937377, 343.0097351,  339.54888916])
 
     def __call__(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         time = round(float(args[0][0, 0]) * 96)
         power = tf.expand_dims(next(self.load)[0] - self.pv.production[0], axis=0)
 
-        # if time < 60:
-        #     hp_power = self._hp_power[time]
-        # elif self.heating.temperature <= 20:
-        #     req_power = heating.required_power(self.heating.temperature, self.heating._t_building_mass,
-        #                                        self.heating.hp.cop)
-        #     hp_power = tf.math.minimum(req_power[0], self.heating.hp.max_power)
-        # else:
-        #     hp_power = 0
+        if time in [10, 11, 58]:
+            hp_power = self.heating.hp.max_power
+        elif self.heating.temperature <= 20:
+            req_power = heating.required_power(self.heating.temperature, self.heating._t_building_mass,
+                                               self.heating.hp.cop)
+            hp_power = tf.math.minimum(req_power[0], self.heating.hp.max_power)
+        else:
+            hp_power = 0.
 
-        hp_power = self._hp_power[time]
+        # hp_power = self._hp_power[time]
 
-        # if self.heating.temperature <= 20.5 and power < 0:
-        #     hp_power = tf.math.minimum(tf.math.maximum(tf.math.abs(power), hp_power), self.heating.hp.max_power)
+        if self.heating.temperature <= 20.5 and power < 0:
+            hp_power = tf.math.minimum(tf.math.maximum(tf.math.abs(power), hp_power), self.heating.hp.max_power)
 
         power += hp_power
         self.heating.set_power(float(hp_power) / self.heating.hp.max_power)

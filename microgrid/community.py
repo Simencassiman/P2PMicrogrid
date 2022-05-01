@@ -449,8 +449,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
     # community = get_rule_based_community(nr_agents)
-    community = get_rl_based_community(nr_agents)
-    # community = get_baseline_community()
+    # community = get_rl_based_community(nr_agents)
+    community = get_baseline_community()
 
     env_df, agent_df = ds.get_test_data()
     env.setup(ds.dataframe_to_dataset(env_df))
@@ -458,7 +458,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
         agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-        agent.load_from_file(setting, implementation)
+        # agent.load_from_file(setting, implementation)
 
     print("Running...")
     time_start_run = time.time()
@@ -481,7 +481,7 @@ min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'tabular'
+implementation = 'semi-intelligent'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -492,7 +492,7 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        load_and_run(db_connection)
+        load_and_run()
     except:
         print(traceback.format_exc())
     finally:
