@@ -23,14 +23,14 @@ import database as db
 # Config
 np.random.seed(42)
 
-primary_color = '#004079ff'
-secondary_color = '#51bcebff'
-tertiary_color = '#1d8dafff'
-neutral_color = '#ccc'
-base_color = '#2f4d5dff'
+primary_color = '#000'      # '#004079ff'
+secondary_color = '#ccc'    # '#51bcebff'
+# tertiary_color = '#eee'     # '#1d8dafff'
+neutral_color = '#777'
+base_color = '#000'         # '#2f4d5dff'
 
-title_fontsize = 18
-axis_label_fontsize = 13
+title_fontsize = 16
+axis_label_fontsize = 12
 figure_format = 'svg'
 
 
@@ -171,6 +171,10 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
                 '2-multi-agent-no-com-hetero', '2-multi-agent-no-com-homo',
                 'single-agent']
     df = df[df['setting'].isin(settings)]
+    df_baselines = df.loc[df['implementation'].isin(['rule', 'semi-intelligent']), ['implementation', 'cost']]\
+        .groupby(['implementation']).sum()
+    df = df[df['implementation'].isin(['tabular'])]
+
     costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum().groupby('setting').mean()
     costs['profiles'] = list(map(lambda s: get_profiles_type(s), costs.index.tolist()))
     costs['setting'] = list(map(lambda s: get_setting_type(s), costs.index.tolist()))
@@ -182,7 +186,7 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     fig, ax = plt.subplots(figsize=(6.5, 5))
     rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color=primary_color)
     rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
-    ax.hlines(y=[0.82, 1.63], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
+    ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
     ax.text(1.38, 0.75, 'Semi-intelligent', color=base_color)
     ax.text(1.5, 1.55, 'Rule-based', color=base_color)
 
@@ -240,7 +244,7 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     # Prices
     ax[1].plot(time, grid_price, color=primary_color)
     ax[1].plot(time, injection_price, color=secondary_color)
-    ax[1].plot(time, p2p_price, '--', color=tertiary_color)
+    ax[1].plot(time, p2p_price, '--', color=primary_color)
     ax[1].set_yticks([0.07, 0.12, 0.17])
     ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
     ax[1].legend(["Offtake", "Injection", "P2P"], loc='upper right', labelcolor=base_color)
@@ -322,7 +326,7 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     fig, ax = plt.subplots(figsize=(4.5, 6.5))
     plt.title("Average cost vs. community scale", color=base_color, fontsize=title_fontsize, loc='right')
 
-    ax.errorbar(costs['agents'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5)
+    ax.errorbar(costs['agents'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
     ax.set_xticks([2, 3, 4, 5], [2, 3, 4, 5])
     ax.set_xlabel("Number of agents", color=base_color, fontsize=axis_label_fontsize)
     ax.set_ylim(0, 2)
@@ -350,7 +354,7 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
         df = db.get_training_progress(con)
         make_learning_plot(df, save_figs)
 
-        df = db.get_validation_results(con)
+        df = db.get_test_results(con)
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
@@ -361,38 +365,43 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
 
         plt.show()
 
-    except:
-        print(traceback.format_exc())
     finally:
         if con:
             con.close()
+
+def statistics_community_scale(df: pd.DataFrame) -> None:
+    settings = ['2-multi-agent-com-hetero', '3-multi-agent-com-hetero', '4-multi-agent-com-hetero',
+                '5-multi-agent-com-hetero']
+    df = df[df['setting'].isin(settings)]
+
+    costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum()
+    costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s[0]).groups()[0]).astype(int)
+    costs = costs.reset_index()
+
+    samples = [np.array(costs.loc[costs['agents'] == i, 'cost']) for i in pd.unique(costs['agents'])]
+    _, p_levene = stats.levene(*samples)
+    _, p_anova = stats.f_oneway(*samples)
+
+    print('Analysis of the influence of community scale:')
+    print(f'Same variance: p-value = {p_levene}')
+    print(f'Same mean: p-value = {p_anova}')
 
 
 def statistical_test_variance_community_size() -> None:
     con = db.get_connection()
 
     try:
-        df = db.get_validation_results(con)
+        df = db.get_test_results(con)
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
 
-        settings = ['2-multi-agent-com-hetero', '3-multi-agent-com-hetero', '4-multi-agent-com-hetero',
-                    '5-multi-agent-com-hetero']
-        df = df[df['setting'].isin(settings)]
+        statistics_community_scale(df)
 
-        costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum()
-        costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s[0]).groups()[0]).astype(int)
-        costs = costs.reset_index()
-
-        samples = [np.array(costs.loc[costs['agents'] == i, 'cost']) for i in pd.unique(costs['agents'])]
-        print(stats.levene(*samples))
-
-    except:
-        print(traceback.format_exc())
     finally:
         if con:
             con.close()
+
 
 def show_raw_load(path='data/data.json'):
     with open(path) as file:
@@ -460,6 +469,6 @@ def expand_irradiation() -> None:
 
 
 if __name__ == "__main__":
-    plot_tabular_comparison(save_figs=True)
-    # statistical_test_variance_community_size()
+    # plot_tabular_comparison(save_figs=False)
+    statistical_test_variance_community_size()
 

@@ -419,8 +419,7 @@ if __name__ == '__main__':
     try:
         # main(db_connection, load_agents=False)
         load_and_run(db_connection)
-    except Exception:
-        print(traceback.format_exc())
+
     finally:
         if db_connection:
             db_connection.close()
