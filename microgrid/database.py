@@ -1,7 +1,7 @@
 # Python Libraries
 import sqlite3
 import os.path as osp
-from typing import List
+from typing import List, Union
 import matplotlib.pyplot as plt
 import re
 
@@ -173,6 +173,38 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
         cursor.close()
 
 
+def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
+                           time: List[float], load: List[float], pv: List[float], temperature: List[float],
+                           heatpump: List[float], cost: List[float], implementation: str) -> None:
+    if con is not None:
+        cursor = con.cursor()
+
+        query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+
+        n = len(load)
+        records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
+                        temperature, heatpump, cost)]
+
+        cursor.executemany(query, records)
+
+        con.commit()
+        cursor.close()
+
+
+def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT *
+            FROM test_results
+        """
+
+        df = pd.read_sql_query(query, con)
+
+        return df
+
+    return None
+
+
 if __name__ == '__main__':
 
     conn = get_connection()
@@ -187,18 +219,16 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT episode 
-                FROM training_progress
-                WHERE agent = 'dqn'
+                DELETE  
+                FROM test_results
+                WHERE setting LIKE '%single-agent%'
             """
 
-            df = pd.read_sql_query(query, conn)
-            # print(df.nunique())
-            print(df)
-            # print(df.columns)
+            # df = pd.read_sql_query(query, conn)
+            # print(df)
 
-            # cursor.execute(query)
-            # conn.commit()
+            cursor.execute(query)
+            conn.commit()
 
         finally:
             conn.close()

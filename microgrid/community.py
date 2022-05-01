@@ -442,23 +442,23 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     heatpump = community.agent.heating._power_history
     costs = cost.tolist()
 
-    db.log_validation_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs, implementation)
+    db.log_test_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs, implementation)
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
-    community = get_rule_based_community(nr_agents)
-    # community = get_rl_based_community(nr_agents)
+    # community = get_rule_based_community(nr_agents)
+    community = get_rl_based_community(nr_agents)
     # community = get_baseline_community()
 
-    env_df, agent_df = ds.get_validation_data()
+    env_df, agent_df = ds.get_test_data()
     env.setup(ds.dataframe_to_dataset(env_df))
     for agent in community.agents:
         agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
         agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
         agent.set_profiles(agent_load, agent_pv)
-        # agent.load_from_file(setting, implementation)
+        agent.load_from_file(setting, implementation)
 
     print("Running...")
     time_start_run = time.time()
@@ -466,10 +466,10 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     time_end_run = time.time()
     cost = tf.math.reduce_sum(cost, axis=0)
 
-    # if con:
-    #     print("Saving...")
-    #     save_times(run_time=time_end_run - time_start_run)
-    #     save_community_results(con, setting, community, cost.numpy())
+    if con:
+        print("Saving...")
+        save_times(run_time=time_end_run - time_start_run)
+        save_community_results(con, setting, community, cost.numpy())
 
     print("Analysing...")
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
@@ -481,7 +481,7 @@ min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'rule'
+implementation = 'tabular'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -489,11 +489,10 @@ episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criter
 
 if __name__ == '__main__':
 
-    # db_connection = db.get_connection()
-    db_connection = None
+    db_connection = db.get_connection()
 
     try:
-        load_and_run()
+        load_and_run(db_connection)
     except:
         print(traceback.format_exc())
     finally:
