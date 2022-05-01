@@ -56,7 +56,7 @@ class QActor(ActorInterface):
 
     def __init__(self, num_time_states: int, num_temperature_states: int, num_balance_states: int,
                  num_p2p_states: int, num_actions: int = 3, gamma: float = 0.9,
-                 alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.95) -> None:
+                 alpha: float = 1e-5, epsilon: float = 1, decay: float = 0.9) -> None:
 
         self._time_states = num_time_states
         self._temp_states = num_temperature_states
@@ -128,7 +128,7 @@ class QActor(ActorInterface):
         )
 
     def decay_exploration(self) -> None:
-        self._epsilon *= self._decay
+        self._epsilon = min(0.1, self._decay * self._epsilon)
 
 
 class QNetwork(keras.Model):

@@ -94,6 +94,10 @@ class ActingAgent(Agent, ABC):
         self.storage = storage
         self.heating = heating
 
+    # @property
+    # def load(self) -> Generator[tf.Tensor, None, None]:
+    #     return (l for l in self._load)
+
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]: ...
 
@@ -105,7 +109,7 @@ class ActingAgent(Agent, ABC):
 
     def reset(self) -> None:
         super(ActingAgent, self).reset()
-        self.load = (l for l in self._load.as_numpy_iterator())
+        self.load = (l for l in self._load)
         self.pv.reset()
         self.storage.reset()
         self.heating.reset()
@@ -292,7 +296,7 @@ class QAgent(RLAgent):
         self._num_p2p_states = 20
 
         actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states,
-                          self._num_p2p_states, decay=0.95)
+                          self._num_p2p_states, decay=0.9)
 
         super(QAgent, self).__init__(actor, *args, **kwargs)
 

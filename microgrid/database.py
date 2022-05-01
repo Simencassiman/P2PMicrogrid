@@ -74,6 +74,13 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             PRIMARY KEY (setting, agent, time) )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS test_results 
+            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
+            load real, pv real, temperature real, heatpump real, cost real, 
+            PRIMARY KEY (setting, agent, time) )
+        """)
+
     else:
         print('Unable to create tables')
 
@@ -243,6 +250,38 @@ def get_validation_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]
     return None
 
 
+def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
+                           time: List[float], load: List[float], pv: List[float], temperature: List[float],
+                           heatpump: List[float], cost: List[float], implementation: str) -> None:
+    if con is not None:
+        cursor = con.cursor()
+
+        query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+
+        n = len(load)
+        records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
+                        temperature, heatpump, cost)]
+
+        cursor.executemany(query, records)
+
+        con.commit()
+        cursor.close()
+
+
+def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT *
+            FROM test_results
+        """
+
+        df = pd.read_sql_query(query, con)
+
+        return df
+
+    return None
+
+
 if __name__ == '__main__':
 
     conn = get_connection()
@@ -253,15 +292,22 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT *     
-                FROM load
-                WHERE date LIKE '%-10-%'
+                SELECT *
+                FROM test_results
             """
 
             df = pd.read_sql_query(query, conn)
             print(df)
 
             # cursor.execute(query)
+            # cursor.execute("""
+            #             CREATE TABLE IF NOT EXISTS test_results
+            #             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL,
+            #              time real NOT NULL,
+            #              load real, pv real, temperature real, heatpump real, cost real,
+            #             PRIMARY KEY (setting, implementation, agent, time) )
+            #         """)
+            # cursor.execute("""DROP TABLE test_results""")
             # conn.commit()
 
         except:

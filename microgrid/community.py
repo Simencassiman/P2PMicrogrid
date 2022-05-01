@@ -8,6 +8,7 @@ import sqlite3
 import statistics
 import time
 import traceback
+from functools import reduce
 from typing import List, Tuple, Callable, Any, Optional
 import numpy as np
 
@@ -83,11 +84,11 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
     return CommunityMicrogrid(timeline, agents, rounds)
 
 
-def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
+def get_rule_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
     return get_community(RuleAgent, n_agents)
 
 
-def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
+def get_rl_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
     if implementation == 'tabular':
         return get_community(QAgent, n_agents)
     if implementation == 'dqn':
@@ -257,7 +258,8 @@ class CommunityMicrogrid:
 def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
 
     print("Creating community...")
-    community = get_rl_based_community(nr_agents)
+    community = get_rl_based_community(nr_agents, homogeneous=False)
+
     if load_agents:
         for agent in community.agents:
             agent.load_from_file(setting, implementation)
@@ -351,19 +353,21 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_validation_results(con, setting, i, time, *data, implementation)
+        db.log_test_results(con, setting, i, time, *data, implementation)
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
-    community = get_rl_based_community(nr_agents)
+    community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
-    env_df, agent_dfs = ds.get_validation_data()
+    env_df, agent_dfs = ds.get_test_data()
     env.setup(ds.dataframe_to_dataset(env_df))
     for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
+                                             (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
+                                           (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
         agent.set_profiles(agent_load, agent_pv)
         agent.load_from_file(setting, implementation)
 
@@ -371,6 +375,13 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     time_start_run = time.time()
     power, cost = community.run()
     time_end_run = time.time()
+
+    totals = np.stack(list(map(lambda a: np.array([sum(map(lambda l: float(l[0]), (l for l in a._load))),
+                                                   sum(a.pv.get_history())]),
+                               community.agents)))
+    print(f'Number of agents: {nr_agents}')
+    print(f'Ratio: {(totals[:, 0] / totals[:, 1]).mean()}')
+    print('-' * 10)
 
     if con:
         print("Saving...")
@@ -384,12 +395,13 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
 
 starting_episodes = 0
-max_episodes = 2 * 1000
+max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
-nr_agents = 4
+nr_agents = 2
 rounds = 1
-setting = f'{nr_agents}-multi-agent-com-hetero'
+homogeneous = True
+setting = f'{nr_agents}-multi-agent-com-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
 
@@ -402,7 +414,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        main(db_connection)
+        # main(db_connection, load_agents=False)
+        load_and_run(db_connection)
     except Exception:
         print(traceback.format_exc())
     finally:
