@@ -78,8 +78,8 @@ def get_rule_based_community(n_agents: int = 5) -> CommunityMicrogrid:
     return get_community(RuleAgent, n_agents)
 
 
-def get_rl_based_community(n_agents: int = 5) -> CommunityMicrogrid:
-    return get_community(QAgent, n_agents)
+def get_rl_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
+    return get_community(QAgent, n_agents, homogeneous)
 
 
 class CommunityMicrogrid:
@@ -310,19 +310,24 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_validation_results(con, setting, i, time, *data)
+        db.log_test_results(con, setting, i, time, *data, implementation)
 
 
 def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
-    community = get_rl_based_community(nr_agents)
+    community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
-    env_df, agent_dfs = ds.get_validation_data()
+    env_df, agent_dfs = ds.get_test_data()
+    if homogeneous:
+        agent_dfs = [agent_dfs[0]] * nr_agents
+
     env.setup(ds.dataframe_to_dataset(env_df))
     for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * 0.7 * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * 4 * 1e3)
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
+                                             (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
+                                           (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
         agent.set_profiles(agent_load, agent_pv)
         agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
 
@@ -339,11 +344,15 @@ def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
+starting_episodes = 0
 max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 2
-setting = f'{nr_agents}-multi-agent-no-com-homo'
+rounds = 1
+homogeneous = False
+setting = f'{nr_agents}-multi-agent-no-com-{"homo" if homogeneous else "hetero"}'
+implementation = 'tabular'
 
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
