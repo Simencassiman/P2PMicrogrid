@@ -362,6 +362,9 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
     env_df, agent_dfs = ds.get_test_data()
+    if homogeneous:
+        agent_dfs = [agent_dfs[0]] * nr_agents
+
     env.setup(ds.dataframe_to_dataset(env_df))
     for i, agent in enumerate(community.agents):
         agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
