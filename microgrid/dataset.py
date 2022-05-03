@@ -1,18 +1,16 @@
 # Python Libraries
-from typing import List, Tuple, Union
-from functools import reduce
+from typing import List, Tuple
 import re
 from datetime import datetime, timedelta
 
 import pandas as pd
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 # Local modules
 import config as cf
-from config import TIME_SLOT, MINUTES_PER_HOUR, CENTS_PER_EURO, HOURS_PER_DAY
+from config import TIME_SLOT, MINUTES_PER_HOUR
 import database as db
 from database import get_connection
 

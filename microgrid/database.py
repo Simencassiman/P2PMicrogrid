@@ -165,43 +165,49 @@ def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: in
                  training: float, validation: float, q_error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        cursor.execute(query, (settings, trial, episode, training, validation, q_error))
+        try:
+            query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (settings, trial, episode, training, validation, q_error))
 
-        cursor.close()
+            con.commit()
+        finally:
+            cursor.close()
 
 
 def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], time: List[float],
                     load: List[float], pv: List[float], target_load: List[float], target_pv: List[float]) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        time = list(map(lambda t: str(t), time))
-        n = len(load)
-        records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
+        try:
+            query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        cursor.executemany(query, records)
+            time = list(map(lambda t: str(t), time))
+            n = len(load)
+            records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
 
-        con.commit()
+            cursor.executemany(query, records)
 
-        cursor.close()
+            con.commit()
+        finally:
+            cursor.close()
 
 
 def log_training_progress(con: sqlite3.Connection,
                           setting: str, agent_type: str, episode: int, reward: float, error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        cursor.execute(query, (setting, agent_type, episode, reward, error))
+        try:
+            query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (setting, agent_type, episode, reward, error))
 
-        cursor.close()
+            con.commit()
+        finally:
+            cursor.close()
 
 
 def get_training_progress(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
