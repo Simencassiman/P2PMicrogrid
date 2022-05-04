@@ -298,22 +298,15 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT *
-                FROM test_results
+                SELECT  
+                FROM validation_results
+                WHERE setting = '2-agent-pv-drop-com'
             """
 
             df = pd.read_sql_query(query, conn)
             print(df)
 
             # cursor.execute(query)
-            # cursor.execute("""
-            #             CREATE TABLE IF NOT EXISTS test_results
-            #             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL,
-            #              time real NOT NULL,
-            #              load real, pv real, temperature real, heatpump real, cost real,
-            #             PRIMARY KEY (setting, implementation, agent, time) )
-            #         """)
-            # cursor.execute("""DROP TABLE test_results""")
             # conn.commit()
 
         except:

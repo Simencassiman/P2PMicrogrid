@@ -568,7 +568,107 @@ def compare_decisions() -> None:
             con.close()
 
 
+def compare_decisions_artificial() -> None:
+    con = db.get_connection()
+
+    try:
+        df = db.get_validation_results(con)
+        df = df[df['setting'].isin(['2-agent-pv-drop-com', '2-agent-pv-drop-no-com'])]
+
+        df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
+        df['time'] = df['time'].map(lambda t: t * 24)
+        df['heatpump'] *= 1e-3
+        timeslot_info = df.pivot(index=['time'], columns=['setting', 'agent'],
+                                 values=['load', 'pv', 'temperature', 'heatpump'])
+        time = np.arange(96)
+        grid_price = (
+                (cf.GRID_COST_AVG
+                 + cf.GRID_COST_AMPLITUDE
+                 * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+                 ) / cf.CENTS_PER_EURO  # from c€ to €
+        )
+        injection_price = np.zeros(grid_price.shape)
+        injection_price[:] = grid_price.min()[None]
+        p2p_price = (grid_price + injection_price) / 2
+
+        # Make plot
+        fig, ax = plt.subplots(6, 1, figsize=(15, 8), sharex=True)
+        fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
+
+        # Powers
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-pv-drop-com', 0)], color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-pv-drop-com', 1)], color=secondary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-agent-pv-drop-com', 0)], '--', color=primary_color)
+        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+        ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
+        ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
+                     bbox_to_anchor=(1.04, 1), loc="upper left")
+
+        # Prices
+        ax[1].plot(time, grid_price, color=primary_color)
+        ax[1].plot(time, injection_price, color=secondary_color)
+        ax[1].plot(time, p2p_price, '--', color=primary_color)
+        ax[1].set_yticks([0.07, 0.12, 0.17])
+        ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
+        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
+
+        # Heat pump
+        width = 0.4
+
+        # agent 0
+        ax[2].set_title("agent 0", fontsize=10, loc='right')
+        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-com', 0)],
+                  label='Communication', width=width, color=primary_color)
+        ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-no-com', 0)],
+                  label='No communication', width=width, color=secondary_color)
+        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+        ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
+                     bbox_to_anchor=(1.04, 0), loc="lower left")
+
+        # agent 1
+        ax[3].set_title("agent 1", fontsize=10, loc='right')
+        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump','2-agent-pv-drop-com', 1)],
+                  label='Communication', width=width, color=primary_color)
+        ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-no-com', 1)],
+                  label='No communication', width=width, color=secondary_color)
+        ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[3].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+
+        # Temperature
+        ax[4].set_title("agent 0", fontsize=10, loc='right')
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-com', 0)],
+                   color=primary_color)
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-no-com', 0)],
+                   color=secondary_color)
+        ax[4].set_yticks([20, 22])
+        ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+        ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
+                     bbox_to_anchor=(1.04, 0), loc="lower left")
+
+        ax[5].set_title("agent 1", fontsize=10, loc='right')
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-com', 1)],
+                   color=primary_color)
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-no-com', 1)],
+                   color=secondary_color)
+        ax[5].set_ylabel("       Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
+        ax[5].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
+        ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+        ax[5].set_yticks([20, 22])
+        ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+        ax[5].xaxis.set_minor_locator(MultipleLocator(1))
+        # ax[5].legend(["Communication", "No communication"], labelcolor=base_color,
+        #              bbox_to_anchor=(1.04, 1), loc="upper left")
+
+        fig.tight_layout()
+    finally:
+        con.close()
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # plot_tabular_comparison(save_figs=False)
     # statistical_test_variance_community_size()
-    compare_decisions()
+    # compare_decisions()
+    compare_decisions_artificial()

@@ -353,7 +353,7 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_test_results(con, setting, i, time, *data, implementation)
+        db.log_validation_results(con, setting, i, time, *data, implementation)
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
@@ -364,6 +364,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     env_df, agent_dfs = ds.get_test_data()
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
+    for df in agent_dfs:
+        df.loc[df.index > 48, 'pv'] = 0
 
     env.setup(ds.dataframe_to_dataset(env_df))
     for i, agent in enumerate(community.agents):
@@ -388,8 +390,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     if con:
         print("Saving...")
-        save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, setting, community, cost.numpy())
+        # save_times(run_time=time_end_run - time_start_run)
+        save_community_results(con, '2-agent-pv-drop-com', community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
 
@@ -403,7 +405,7 @@ min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 2
 rounds = 1
-homogeneous = True
+homogeneous = False
 setting = f'{nr_agents}-multi-agent-com-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
