@@ -105,6 +105,7 @@ class CommunityMicrogrid:
         self.q = np.zeros((len(env), len(agents), 3))
 
         self._rounds = rounds
+        self.decisions = np.zeros((len(env), self._rounds + 1, len(self.agents)))
 
     def _assign_powers(self, p2p_power: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         p_match = tf.where(tf.math.sign(p2p_power) != tf.math.sign(tf.transpose(p2p_power)),
@@ -128,7 +129,7 @@ class CommunityMicrogrid:
 
         return costs
 
-    def _run(self, state: tf.Tensor,
+    def _run(self, time: int, state: tf.Tensor,
              training: bool = False) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         buying_price, injection_price = self.grid.take_decision(state)
         p2p_price = (buying_price + injection_price) / 2
@@ -149,6 +150,9 @@ class CommunityMicrogrid:
 
             p2p_power = power_exchanges.stack()
 
+            for a, agent in enumerate(self.agents):
+                self.decisions[time, r, a] = agent.heating.power.numpy()
+
         p_grid, p_p2p = self._assign_powers(p2p_power)
 
         return p_grid, p_p2p, buying_price, injection_price, p2p_price
@@ -163,7 +167,7 @@ class CommunityMicrogrid:
 
         for time, (features, next_features) in enumerate(env.data):
 
-            power_grid, power_p2p, price_buy, price_inj, price_p2p = self._run(features)
+            power_grid, power_p2p, price_buy, price_inj, price_p2p = self._run(time, features)
 
             grid_power = grid_power.write(time, power_grid)
             peer_power = peer_power.write(time, power_p2p)
@@ -187,7 +191,7 @@ class CommunityMicrogrid:
         for _ in range(5):
             for t, (state, next_state) in enumerate(env.data):
 
-                power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(state, training=True)
+                power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(t, state, training=True)
 
                 costs = tf.squeeze(self._compute_costs(power_grid, power_p2p, tf.expand_dims(p_buy, axis=0),
                                                        tf.expand_dims(p_inj, axis=0), tf.expand_dims(p_p2p, axis=0)))
@@ -211,7 +215,7 @@ class CommunityMicrogrid:
                       _rewards: tf.TensorArray, _losses: tf.TensorArray) -> Tuple[float, float]:
         for t, (state, next_state) in enumerate(env.data):
 
-            power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(state, training=True)
+            power_grid, power_p2p, p_buy, p_inj, p_p2p = self._run(t, state, training=True)
 
             costs = tf.squeeze(self._compute_costs(power_grid, power_p2p, tf.expand_dims(p_buy, axis=0),
                                                    tf.expand_dims(p_inj, axis=0), tf.expand_dims(p_p2p, axis=0)))
@@ -353,7 +357,11 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_validation_results(con, setting, i, time, *data, implementation)
+        db.log_test_results(con, setting, i, time, *data, implementation)
+
+    for a in range(len(community.agents)):
+        for r in range(rounds + 1):
+            db.log_rounds_decision(con, setting, a, time, r, community.decisions[:, r, a].tolist())
 
 
 def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
@@ -364,10 +372,10 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     env_df, agent_dfs = ds.get_test_data()
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
-    for df in agent_dfs:
-        df.loc[df.index > 48, 'pv'] = 0
 
     env.setup(ds.dataframe_to_dataset(env_df))
+    community.decisions = np.zeros((len(env), rounds + 1, len(community.agents)))
+
     for i, agent in enumerate(community.agents):
         agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
                                              (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
@@ -390,8 +398,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     if con:
         print("Saving...")
-        # save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, '2-agent-pv-drop-com', community, cost.numpy())
+        save_times(run_time=time_end_run - time_start_run)
+        save_community_results(con, setting, community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
 
@@ -404,9 +412,9 @@ max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 2
-rounds = 1
+rounds = 3
 homogeneous = False
-setting = f'{nr_agents}-multi-agent-com-{"homo" if homogeneous else "hetero"}'
+setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
 

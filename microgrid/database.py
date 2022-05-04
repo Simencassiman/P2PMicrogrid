@@ -3,7 +3,6 @@ import sqlite3
 import os.path as osp
 import traceback
 from typing import List, Union
-import matplotlib.pyplot as plt
 import re
 
 import numpy as np
@@ -79,6 +78,13 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
             load real, pv real, temperature real, heatpump real, cost real, 
             PRIMARY KEY (setting, agent, time) )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rounds_comparison  
+            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL, round integer NOT NULL,
+             decision real,
+            PRIMARY KEY (setting, agent, time, round))
         """)
 
     else:
@@ -288,6 +294,36 @@ def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
     return None
 
 
+def log_rounds_decision(con: sqlite3.Connection, setting: str, agent: int, time: List[float], round: int,
+                        decisions: List[float]) -> None:
+    if con:
+        cursor = con.cursor()
+
+        try:
+            query = "INSERT INTO rounds_comparison VALUES (?,?,?,?,?)"
+
+            nr_entries = len(time)
+            data = [*zip([setting] * nr_entries, [agent] * nr_entries, time, [round] * nr_entries, decisions)]
+
+            cursor.executemany(query, data)
+            con.commit()
+
+        finally:
+            if cursor:
+                cursor.close()
+
+
+def get_rounds_decisions(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT * 
+            FROM rounds_comparison
+        """
+        return pd.read_sql_query(query, con)
+
+    return None
+
+
 if __name__ == '__main__':
 
     conn = get_connection()
@@ -298,16 +334,17 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT  
-                FROM validation_results
-                WHERE setting = '2-agent-pv-drop-com'
+                CREATE TABLE IF NOT EXISTS rounds_comparison  
+                (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL, round integer NOT NULL,
+                 decision real,
+                PRIMARY KEY (setting, agent, time, round))
             """
 
-            df = pd.read_sql_query(query, conn)
-            print(df)
+            # df = pd.read_sql_query(query, conn)
+            # print(df)
 
-            # cursor.execute(query)
-            # conn.commit()
+            cursor.execute(query)
+            conn.commit()
 
         except:
             print(traceback.format_exc())

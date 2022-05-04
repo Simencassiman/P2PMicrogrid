@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from calendar import monthrange
 
+import matplotlib
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -568,6 +569,41 @@ def compare_decisions() -> None:
             con.close()
 
 
+def compare_decisions_rounds() -> None:
+    con = db.get_connection()
+
+    try:
+        df = db.get_rounds_decisions(con)
+        df['decision'] *= 1e-3
+
+        decisions = df[(df['agent'] == 1) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero')]\
+            .pivot(index=['time'], columns=['round'], values=['decision'])
+
+        width = 0.2
+        x = np.array(decisions.index * 96)
+
+        fig, ax = plt.subplots(figsize=(14, 3))
+        fig.suptitle("Agent decisions for each round of the time slot")
+
+        ax.bar(x - 1.5 * width, decisions.loc[:, ('decision', 0)], label='Round 0', width=width)
+        ax.bar(x - 0.5 * width, decisions.loc[:, ('decision', 1)], label='Round 1', width=width)
+        ax.bar(x + 0.5 * width, decisions.loc[:, ('decision', 2)], label='Round 2', width=width)
+        ax.bar(x + 1.5 * width, decisions.loc[:, ('decision', 3)], label='Round 3', width=width)
+
+        ax.set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
+        ax.set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+        ax.xaxis.set_minor_locator(MultipleLocator(1))
+        ax.set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax.set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+        ax.legend()
+
+    finally:
+        if con:
+            con.close()
+
+    plt.show()
+
+
 def compare_decisions_artificial() -> None:
     con = db.get_connection()
 
@@ -667,8 +703,35 @@ def compare_decisions_artificial() -> None:
     plt.show()
 
 
+def compare_q_values() -> None:
+    q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
+    q_table /= np.abs(q_table).max()
+
+    fig, ax = plt.subplots(1, 20, figsize=(13, 4), sharey=True)
+    fig.suptitle("Time", fontsize=13)
+    ax[0].set_yticks(list(range(20)))
+    ax[0].set_ylabel("Temperature")
+    for t in range(20):
+        # fig.suptitle(f't={t}')
+        im = ax[t].imshow(q_table[t, :, 0, 0, :] - q_table.mean(), cmap='magma',
+                          norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
+        if t == 10:
+            ax[t].set_xlabel("Action")
+        # ax.set_yscale('symlog', linthresh=0.02)
+        ax[t].set_xticks(list(range(3)))
+
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])
+    fig.colorbar(im, cax=cbar_ax)
+    # fig.tight_layout()
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # plot_tabular_comparison(save_figs=False)
     # statistical_test_variance_community_size()
     # compare_decisions()
-    compare_decisions_artificial()
+    # compare_decisions_artificial()
+    # compare_decisions_rounds()
+    compare_q_values()
