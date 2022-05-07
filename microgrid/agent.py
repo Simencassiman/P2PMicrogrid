@@ -182,11 +182,11 @@ class RLAgent(ActingAgent):
         super(RLAgent, self).__init__(*args, **kwargs)
 
         self.actor = actor
-        self.trainer = rl.Trainer(self.actor,
-                                  buffer_size=5 * 1000, batch_size=32,
-                                  gamma=0.95, tau=0.005,
-                                  optimizer=tf.optimizers.Adam(learning_rate=1e-5)
-        )
+        # self.trainer = rl.Trainer(self.actor,
+        #                           buffer_size=5 * 1000, batch_size=32,
+        #                           gamma=0.95, tau=0.005,
+        #                           optimizer=tf.optimizers.Adam(learning_rate=1e-5)
+        # )
 
         self._next_load: Tuple[tf.Tensor, tf.Tensor] = next(self.load)
         self._next_production: Tuple[tf.Tensor, tf.Tensor] = self.pv.production

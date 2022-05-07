@@ -43,17 +43,7 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * n_agents
 
-    # Get dates for plotting
-    # ds.get_train_isodate()
-    # data = db.get_data(conn, start, end)
-    # data['isodate'] = data['date'] + ' ' + data['time'] + data['utc']
-
-    # Take care of outliers, should do this on actual data
-    # max_load = 3 * data['l0'].median()
-    # data.loc[data['l0'].abs() >= max_load, 'l0'] = max_load
-
     timeline = env_df['time'].map(lambda t: int(t * MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY))
-    # timeline = np.array([datetime.fromisoformat(date) for date in data['isodate']])
 
     agents: List[ActingAgent] = []
 
@@ -85,14 +75,14 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
 
 
 def get_rule_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
-    return get_community(RuleAgent, n_agents)
+    return get_community(RuleAgent, n_agents, homogeneous=homogeneous)
 
 
 def get_rl_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
     if implementation == 'tabular':
-        return get_community(QAgent, n_agents)
+        return get_community(QAgent, n_agents, homogeneous=homogeneous)
     if implementation == 'dqn':
-        return get_community(DQNAgent, n_agents)
+        return get_community(DQNAgent, n_agents, homogeneous=homogeneous)
 
 
 class CommunityMicrogrid:
@@ -259,10 +249,12 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
+def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
+
+    print(setting)
 
     print("Creating community...")
-    community = get_rl_based_community(nr_agents, homogeneous=False)
+    community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
     if load_agents:
         for agent in community.agents:
@@ -312,22 +304,25 @@ def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
 
     time_end_training = time.time()
 
-    print("Running...")
-    env_df, agent_dfs = ds.get_validation_data()
-    env.setup(ds.dataframe_to_dataset(env_df))
-    for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
-        agent.set_profiles(agent_load, agent_pv)
+    if analyse:
+        print("Running...")
+        env_df, agent_dfs = ds.get_validation_data()
+        env.setup(ds.dataframe_to_dataset(env_df))
+        for i, agent in enumerate(community.agents):
+            agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
+                                                 (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+            agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
+                                               (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
+            agent.set_profiles(agent_load, agent_pv)
 
-    time_start_run = time.time()
-    power, cost = community.run()
-    time_end_run = time.time()
-    cost = tf.math.reduce_sum(cost, axis=0)
+        time_start_run = time.time()
+        power, cost = community.run()
+        time_end_run = time.time()
+        cost = tf.math.reduce_sum(cost, axis=0)
 
-    print("Analysing...")
-    save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
-    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+        print("Analysing...")
+        save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
+        analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
 def save_times(train_time: Optional[float] = None, run_time: Optional[float] = None) -> None:
@@ -398,7 +393,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     if con:
         print("Saving...")
-        save_times(run_time=time_end_run - time_start_run)
+        # save_times(run_time=time_end_run - time_start_run)
         save_community_results(con, setting, community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
@@ -410,9 +405,9 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 starting_episodes = 0
 max_episodes = 1000
 min_episodes_criterion = 50
-save_episodes = 100
+save_episodes = 50
 nr_agents = 2
-rounds = 3
+rounds = 2
 homogeneous = False
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
@@ -427,8 +422,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        # main(db_connection, load_agents=False)
-        load_and_run(db_connection)
+        main(db_connection, analyse=True)
+        # load_and_run(db_connection)
 
     finally:
         if db_connection:

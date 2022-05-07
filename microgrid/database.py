@@ -334,8 +334,9 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                SELECT * 
+                SELECT *        
                 FROM training_progress
+                WHERE setting LIKE '%rounds-2%'
             """
 
             df = pd.read_sql_query(query, conn)
