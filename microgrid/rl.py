@@ -88,8 +88,8 @@ class QActor(ActorInterface):
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
         temperature = max(min(int((state[0, 1] + 1) / 2 * (self._temp_states - 2) + 1), self._temp_states - 1), 0)
-        balance = max(min(int((state[0, 2] + 1) / 2) * self._balance_states, self._balance_states - 1), 0)
-        p2p = max(min(int((state[0, 3] + 1) / 2) * self._p2p_states, self._p2p_states - 1), 0)
+        balance = max(min(int((state[0, 2] + 1) / 2 * self._balance_states), self._balance_states - 1), 0)
+        p2p = max(min(int((state[0, 3] + 1) / 2 * self._p2p_states), self._p2p_states - 1), 0)
 
         return time, temperature, balance, p2p
 

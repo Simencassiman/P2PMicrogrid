@@ -259,7 +259,7 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
+def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=False)
@@ -316,8 +316,10 @@ def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
     env_df, agent_dfs = ds.get_validation_data()
     env.setup(ds.dataframe_to_dataset(env_df))
     for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
+                                             (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
+                                           (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
         agent.set_profiles(agent_load, agent_pv)
 
     time_start_run = time.time()
@@ -325,9 +327,10 @@ def main(con: sqlite3.Connection, load_agents: bool = False) -> None:
     time_end_run = time.time()
     cost = tf.math.reduce_sum(cost, axis=0)
 
-    print("Analysing...")
-    save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
-    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+    if analyse:
+        print("Analysing...")
+        save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
+        analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
 def save_times(train_time: Optional[float] = None, run_time: Optional[float] = None) -> None:
@@ -412,8 +415,8 @@ max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 100
 nr_agents = 2
-rounds = 3
-homogeneous = False
+rounds = 1
+homogeneous = True
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
@@ -427,8 +430,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        # main(db_connection, load_agents=False)
-        load_and_run(db_connection)
+        main(db_connection)
+        # load_and_run(db_connection)
 
     finally:
         if db_connection:
