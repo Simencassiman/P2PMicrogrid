@@ -428,8 +428,6 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
         make_day_plot(df, save_figs)
         make_nr_agent_dependency_plot(df, save_figs)
 
-        plt.show()
-
     finally:
         if con:
             con.close()
@@ -562,7 +560,6 @@ def compare_decisions() -> None:
         #              bbox_to_anchor=(1.04, 1), loc="upper left")
 
         fig.tight_layout()
-        plt.show()
 
     finally:
         if con:
@@ -600,8 +597,6 @@ def compare_decisions_rounds() -> None:
     finally:
         if con:
             con.close()
-
-    plt.show()
 
 
 def compare_decisions_artificial() -> None:
@@ -700,32 +695,33 @@ def compare_decisions_artificial() -> None:
     finally:
         con.close()
 
-    plt.show()
-
 
 def compare_q_values() -> None:
-    q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
+    # q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
+    q_table = np.load(f'../models_tabular/single_agent_0.npy')
     q_table /= np.abs(q_table).max()
 
-    fig, ax = plt.subplots(1, 20, figsize=(13, 4), sharey=True)
-    fig.suptitle("Time", fontsize=13)
-    ax[0].set_yticks(list(range(20)))
-    ax[0].set_ylabel("Temperature")
-    for t in range(20):
-        # fig.suptitle(f't={t}')
-        im = ax[t].imshow(q_table[t, :, 0, 0, :] - q_table.mean(), cmap='magma',
-                          norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
-        if t == 10:
-            ax[t].set_xlabel("Action")
-        # ax.set_yscale('symlog', linthresh=0.02)
-        ax[t].set_xticks(list(range(3)))
+    for i in range(10):
+        fig, ax = plt.subplots(1, 20, figsize=(13, 4), sharey=True)
+        fig.suptitle("Time", fontsize=13)
+        ax[0].set_yticks(list(range(20)))
+        ax[0].set_ylabel("Temperature")
 
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])
-    fig.colorbar(im, cax=cbar_ax)
+        for t in range(20):
+            # fig.suptitle(f't={t}')
+            im = ax[t].imshow(q_table[t, :, 0, :] - q_table.mean(), cmap='seismic',
+                                 norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
+            # im = ax[t].imshow(q_table[t, :, 0, i, :] - q_table.mean(), cmap='seismic',
+            #                   norm=matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1))
+            if t == 10:
+                ax[t].set_xlabel("Action")
+            # ax.set_yscale('symlog', linthresh=0.02)
+            ax[t].set_xticks(list(range(3)))
+
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])
+        fig.colorbar(im, cax=cbar_ax)
     # fig.tight_layout()
-
-    plt.show()
 
 
 if __name__ == "__main__":
@@ -735,3 +731,5 @@ if __name__ == "__main__":
     # compare_decisions_artificial()
     # compare_decisions_rounds()
     compare_q_values()
+
+    plt.show()

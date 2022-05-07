@@ -334,20 +334,16 @@ if __name__ == '__main__':
             cursor = conn.cursor()
 
             query = """
-                CREATE TABLE IF NOT EXISTS rounds_comparison  
-                (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL, round integer NOT NULL,
-                 decision real,
-                PRIMARY KEY (setting, agent, time, round))
+                SELECT * 
+                FROM training_progress
             """
 
-            # df = pd.read_sql_query(query, conn)
-            # print(df)
+            df = pd.read_sql_query(query, conn)
+            print(df)
 
-            cursor.execute(query)
-            conn.commit()
+            # cursor.execute(query)
+            # conn.commit()
 
-        except:
-            print(traceback.format_exc())
         finally:
             if cursor:
                 cursor.close()
