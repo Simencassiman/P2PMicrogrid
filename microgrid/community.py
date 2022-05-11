@@ -250,7 +250,6 @@ class CommunityMicrogrid:
 
 
 def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
-
     print(setting)
 
     print("Creating community...")
@@ -314,6 +313,7 @@ def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = Fal
             agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
                                                (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
             agent.set_profiles(agent_load, agent_pv)
+
 
         time_start_run = time.time()
         power, cost = community.run()
