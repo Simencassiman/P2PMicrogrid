@@ -30,15 +30,6 @@ def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int
     # Load time series
     env_df, agent_df = ds.get_train_data()
 
-    # Get dates for plotting
-    # ds.get_train_isodate()
-    # data = db.get_data(conn, start, end)
-    # data['isodate'] = data['date'] + ' ' + data['time'] + data['utc']
-
-    # Take care of outliers, should do this on actual data
-    # max_load = 3 * data['l0'].median()
-    # data.loc[data['l0'].abs() >= max_load, 'l0'] = max_load
-
     timeline = env_df['time'].map(lambda t: int(t * MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY))
     # timeline = np.array([datetime.fromisoformat(date) for date in data['isodate']])
 
@@ -352,11 +343,12 @@ class SingleAgentCommunity(CommunityMicrogrid):
         return total_reward, avg_loss
 
 
-def main(con: sqlite3.Connection) -> None:
+def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents)
-    community.agent.load_from_file(setting, implementation)
+    if load_agents:
+        community.agent.load_from_file(setting, implementation)
 
     env_len = len(env)
     rewards = tf.TensorArray(dtype=tf.float32, size=env_len, dynamic_size=False)
@@ -394,22 +386,23 @@ def main(con: sqlite3.Connection) -> None:
 
     time_end_training = time.time()
 
-    print("Running...")
-    env_df, agent_df = ds.get_validation_data()
-    env.setup(ds.dataframe_to_dataset(env_df))
-    for agent in community.agents:
-        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
-        agent.set_profiles(agent_load, agent_pv)
+    if analyse:
+        print("Running...")
+        env_df, agent_df = ds.get_validation_data()
+        env.setup(ds.dataframe_to_dataset(env_df))
+        for agent in community.agents:
+            agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
+            agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
+            agent.set_profiles(agent_load, agent_pv)
 
-    time_start_run = time.time()
-    power, cost = community.run()
-    time_end_run = time.time()
-    cost = tf.math.reduce_sum(cost, axis=0)
+        time_start_run = time.time()
+        power, cost = community.run()
+        time_end_run = time.time()
+        cost = tf.math.reduce_sum(cost, axis=0)
 
-    print("Analysing...")
-    save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
-    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+        print("Analysing...")
+        save_times(train_time=time_end_training - time_start_training, run_time=time_end_run - time_start_run)
+        analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
 def save_times(train_time: Optional[float] = None, run_time: Optional[float] = None) -> None:
@@ -475,13 +468,13 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episode = 350 + 1
-max_episodes = 1 * 1000
+starting_episode = 0
+max_episodes = 1000
 min_episodes_criterion = 50
-save_episodes = 100
+save_episodes = 50
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'semi-intelligent'
+implementation = 'tabular'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -492,9 +485,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        load_and_run()
-    except:
-        print(traceback.format_exc())
+        main(db_connection, analyse=True)
+        # load_and_run()
     finally:
         if db_connection:
             db_connection.close()
