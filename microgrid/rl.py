@@ -59,8 +59,8 @@ class QActor:
 
     def _get_state_indices(self, state: np.ndarray) -> Tuple[int, int, int]:
         time = max(min(int(state[0, 0] * self._time_states), self._time_states - 1), 0)
-        temperature = max(min(int((state[0, 1] + 1) / 2 * self._temp_states), self._temp_states - 1), 0)
-        balance = max(min(int((state[0, 2] + 1) / 2) * self._balance_states, self._balance_states - 1), 0)
+        temperature = max(min(int((state[0, 1] + 1) / 2 * (self._temp_states - 2) + 1), self._temp_states - 1), 0)
+        balance = max(min(int((state[0, 2] + 1) / 2 * self._balance_states), self._balance_states - 1), 0)
 
         return time, temperature, balance
 
@@ -96,7 +96,7 @@ class QActor:
         )
 
     def decay_exploration(self) -> None:
-        self._epsilon *= self._decay
+        self._epsilon = max(0.1, self._decay * self._epsilon)
 
 
 class QNetwork(keras.Model):
