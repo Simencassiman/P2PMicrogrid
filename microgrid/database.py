@@ -117,41 +117,52 @@ def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: in
                  training: float, validation: float, q_error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        cursor.execute(query, (settings, trial, episode, training, validation, q_error))
+        try:
+            query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (settings, trial, episode, training, validation, q_error))
+
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], time: List[float],
                     load: List[float], pv: List[float], target_load: List[float], target_pv: List[float]) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        time = list(map(lambda t: str(t), time))
-        n = len(load)
-        records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
+        try:
+            query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        cursor.executemany(query, records)
+            time = list(map(lambda t: str(t), time))
+            n = len(load)
+            records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
 
-        con.commit()
+            cursor.executemany(query, records)
 
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_training_progress(con: sqlite3.Connection,
                           setting: str, agent_type: str, episode: int, reward: float, error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        cursor.execute(query, (setting, agent_type, episode, reward, error))
+        try:
+            query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (setting, agent_type, episode, reward, error))
 
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
@@ -160,15 +171,18 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+            n = len(load)
+            records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
@@ -177,16 +191,19 @@ def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
-                        temperature, heatpump, cost)]
+            n = len(load)
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
+                            temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
@@ -212,10 +229,10 @@ if __name__ == '__main__':
         cursor = conn.cursor()
         try:
 
-            query = """
-                SELECT * 
-                FROM test_results
-                WHERE setting LIKE '%homo%'
+            query = """ 
+                SELECT *  
+                FROM training_progress
+                WHERE setting LIKE '%no-com%' AND setting LIKE '%hetero'
             """
 
             df = pd.read_sql_query(query, conn)

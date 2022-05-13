@@ -265,25 +265,27 @@ def main(con: sqlite3.Connection, analyse: bool =True) -> None:
                 for agent in community.agents:
                     agent.actor.decay_exploration()
 
-                db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
+                db.log_training_progress(con, setting, implementation, episode, _reward, _error)
 
             if (episode + 1) % save_episodes == 0:
                 for i, agent in enumerate(community.agents):
-                    np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
+                    np.save(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
 
         _reward = statistics.mean(episodes_reward)
         _error = statistics.mean(episodes_error)
-        db.log_training_progress(con, setting, 'q-table', episode, _reward, _error)
+        db.log_training_progress(con, setting, implementation, episode, _reward, _error)
         for i, agent in enumerate(community.agents):
-            np.save(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
+            np.save(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy', agent.actor.q_table)
 
     if analyse:
         print("Running...")
         env_df, agent_dfs = ds.get_validation_data()
         env.setup(ds.dataframe_to_dataset(env_df))
         for i, agent in enumerate(community.agents):
-            agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * np.random.normal(0.7, 0.2, 1) * 1e3)
-            agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * np.random.normal(4, 0.2, 1) * 1e3)
+            agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
+                                                 (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+            agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
+                                               (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
             agent.set_profiles(agent_load, agent_pv)
 
         power, cost = community.run()
@@ -321,7 +323,7 @@ def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None
         agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
                                            (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
         agent.set_profiles(agent_load, agent_pv)
-        agent.actor.set_qtable(np.load(f'../models_tabular/{re.sub("-", "_", setting)}_{i}.npy'))
+        agent.actor.set_qtable(np.load(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy'))
 
     print("Running...")
     power, cost = community.run()
@@ -342,7 +344,7 @@ min_episodes_criterion = 50
 save_episodes = 50
 nr_agents = 2
 rounds = 1
-homogeneous = True
+homogeneous = False
 setting = f'{nr_agents}-multi-agent-rounds-{rounds}-no-com-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
