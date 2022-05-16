@@ -25,6 +25,12 @@ import dataset as ds
 import database as db
 
 
+# ------- Parameter setup ------- #
+seed = 42
+tf.random.set_seed(seed)
+np.random.seed(seed)
+
+
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
                   homogeneous: bool = False) -> CommunityMicrogrid:
     # Load time series
