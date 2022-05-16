@@ -170,25 +170,26 @@ class HeatPump:
 
 
 if __name__ == '__main__':
-    power = 0.
-
-    t_indoor = 21.
-    t_building_mass = 20.
-    cop = 3
-
-    env_df, _ = ds.get_train_data()
-    time = np.arange(len(env_df['time']))
-
-    t_outdoor = np.array(env_df['temperature'])
-    temp = np.zeros(len(time))
-    bm_temp = np.zeros(len(time))
-
-    for t in time:
-        temp[t] = t_indoor
-        bm_temp[t] = t_building_mass
-
-        t_indoor, t_building_mass = temperature_simulation(t_outdoor[t], t_indoor, t_building_mass, power, cop)
-
-    plt.plot(time, t_outdoor)
-    plt.plot(time, temp, bm_temp)
-    plt.show()
+    # power = 0.
+    #
+    # t_indoor = 21.
+    # t_building_mass = 20.
+    # cop = 3
+    #
+    # env_df, _ = ds.get_train_data()
+    # time = np.arange(len(env_df['time']))
+    #
+    # t_outdoor = np.array(env_df['temperature'])
+    # temp = np.zeros(len(time))
+    # bm_temp = np.zeros(len(time))
+    #
+    # for t in time:
+    #     temp[t] = t_indoor
+    #     bm_temp[t] = t_building_mass
+    #
+    #     t_indoor, t_building_mass = temperature_simulation(t_outdoor[t], t_indoor, t_building_mass, power, cop)
+    #
+    # plt.plot(time, t_outdoor)
+    # plt.plot(time, temp, bm_temp)
+    # plt.show()
+    print(np.random.normal(0, 0.3))

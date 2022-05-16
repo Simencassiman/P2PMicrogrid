@@ -32,7 +32,7 @@ base_color = '#000'         # '#2f4d5dff'
 
 title_fontsize = 16
 axis_label_fontsize = 12
-figure_format = 'svg'
+figure_format = 'eps'
 
 
 def show_raw_load(path='data/data.json'):
@@ -257,8 +257,8 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color=primary_color)
     rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
     ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
-    ax.text(1.38, 0.75, 'Semi-intelligent', color=base_color)
-    ax.text(1.5, 1.55, 'Rule-based', color=base_color)
+    ax.text(1.38, 1.3, 'Semi-intelligent', color=base_color)
+    ax.text(1.5, 1.73, 'Rule-based', color=base_color)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title('Average daily cost paid by an agent', color=base_color, fontsize=title_fontsize)
@@ -274,7 +274,7 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     ax.spines['left'].set_color(base_color)
     ax.tick_params(axis='x', colors=base_color)
     ax.tick_params(axis='y', colors=base_color)
-    ax.legend(labelcolor=base_color)
+    ax.legend(labelcolor=base_color, loc='upper center')
 
     fig.tight_layout()
 
@@ -297,7 +297,7 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     injection_price[:] = grid_price.min()[None]
     p2p_price = (grid_price + injection_price) / 2
 
-    fig, ax = plt.subplots(4, 1, figsize=(9, 6.5), sharex=True)
+    fig, ax = plt.subplots(4, 1, figsize=(10, 7), sharex=True)
     fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
 
     # Powers
@@ -309,7 +309,8 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     ax[0].plot(time, net_power, '--', color=primary_color)
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-    ax[0].legend(["Base Load", "PV", "Net Consumption"], loc='upper right', labelcolor=base_color)
+    ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color,
+                 bbox_to_anchor=(1.04, 1), loc="upper left")
 
     # Prices
     ax[1].plot(time, grid_price, color=primary_color)
@@ -317,7 +318,8 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     ax[1].plot(time, p2p_price, '--', color=primary_color)
     ax[1].set_yticks([0.07, 0.12, 0.17])
     ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-    ax[1].legend(["Offtake", "Injection", "P2P"], loc='upper right', labelcolor=base_color)
+    ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color,
+                 bbox_to_anchor=(1.04, 1), loc="upper left")
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
@@ -349,7 +351,7 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
     df.loc[df['episode'] == 999, 'episode'] = 1000
     episodes = df.pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(7, 5))
     fig.suptitle("Running rewards during training", color=base_color, fontsize=title_fontsize)
     ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color=primary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
@@ -395,7 +397,7 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s).groups()[0]).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(4.5, 6.5))
+    fig, ax = plt.subplots(figsize=(4.5, 5.5))
     plt.title("Average cost vs. community scale", color=base_color, fontsize=title_fontsize, loc='right')
 
     ax.errorbar(costs['agents'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
@@ -431,12 +433,13 @@ def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['rounds'] = costs.index.map(lambda s: get_rounds(s)).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(4.5, 6.5))
+    fig, ax = plt.subplots(figsize=(5.5, 5.5))
     plt.title("Average cost vs. number of decision rounds", color=base_color, fontsize=title_fontsize)
 
     ax.errorbar(costs['rounds'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
     ax.set_xlabel("Number of rounds", color=base_color, fontsize=axis_label_fontsize)
-    ax.set_ylim(0, 2)
+    ax.set_xticks([1, 2, 3])
+    ax.set_ylim(1.0, 1.75)
     ax.set_ylabel("Cost [€]", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
@@ -450,7 +453,7 @@ def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     fig.tight_layout()
 
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/scaling_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/rounds_effect_plot.{figure_format}', format=figure_format)
 
 
 def plot_tabular_comparison(save_figs: bool = False) -> None:
@@ -470,40 +473,6 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
         make_day_plot(df, save_figs)
         make_nr_agent_dependency_plot(df, save_figs)
         make_nr_rounds_dependency_plot(df, save_figs)
-
-    finally:
-        if con:
-            con.close()
-
-
-def statistics_community_scale(df: pd.DataFrame) -> None:
-    settings = ['2-multi-agent-com-hetero', '3-multi-agent-com-hetero', '4-multi-agent-com-hetero',
-                '5-multi-agent-com-hetero']
-    df = df[df['setting'].isin(settings)]
-
-    costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum()
-    costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s[0]).groups()[0]).astype(int)
-    costs = costs.reset_index()
-
-    samples = [np.array(costs.loc[costs['agents'] == i, 'cost']) for i in pd.unique(costs['agents'])]
-    _, p_levene = stats.levene(*samples)
-    _, p_anova = stats.f_oneway(*samples)
-
-    print('Analysis of the influence of community scale:')
-    print(f'Same variance: p-value = {p_levene}')
-    print(f'Same mean: p-value = {p_anova}')
-
-
-def statistical_test_variance_community_size() -> None:
-    con = db.get_connection()
-
-    try:
-        df = db.get_test_results(con)
-        df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
-        df['time'] = df['time'].map(lambda t: t * 24)
-        df['heatpump'] *= 1e-3
-
-        statistics_community_scale(df)
 
     finally:
         if con:
@@ -535,7 +504,7 @@ def compare_decisions(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(6, 1, figsize=(15, 8), sharex=True)
+        fig, ax = plt.subplots(6, 1, figsize=(10, 8), sharex=True)
         fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
 
         # Powers
@@ -641,7 +610,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(4, 1, figsize=(15, 8), sharex=True)
+        fig, ax = plt.subplots(4, 1, figsize=(10, 7), sharex=True)
         fig.suptitle("Agent decisions for each round of the time slot", color=base_color, fontsize=title_fontsize)
 
         # Powers
@@ -649,7 +618,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-rounds-3-hetero', 0)], color=secondary_color)
         ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[0].legend(["Base Load", "PV"], labelcolor=base_color)
+        ax[0].legend(["Base Load", "PV"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
 
         # Prices
         ax[1].plot(time, grid_price, color=primary_color)
@@ -657,7 +626,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[1].plot(time, p2p_price, '--', color=primary_color)
         ax[1].set_yticks([0.07, 0.12, 0.17])
         ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color)
+        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
 
         # Heat pump
         width = 0.2
@@ -670,7 +639,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
 
         ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
         ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[2].legend()
+        ax[2].legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
         # Temperature
         ax[3].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-3-hetero', 0)],
@@ -716,7 +685,7 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(6, 1, figsize=(15, 8), sharex=True)
+        fig, ax = plt.subplots(6, 1, figsize=(10, 8), sharex=True)
         fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
 
         # Powers
@@ -821,10 +790,69 @@ def compare_q_values() -> None:
     # fig.tight_layout()
 
 
-save_figures = False
+def statistics_community_scale(df: pd.DataFrame) -> None:
+    settings = ['2-multi-agent-com-rounds-1-hetero', '3-multi-agent-com-rounds-1-hetero',
+                '4-multi-agent-com-rounds-1-hetero', '5-multi-agent-com-rounds-1-hetero']
+    df = df[df['setting'].isin(settings)]
+
+    costs = df[['setting', 'agent', 'day', 'cost']]\
+        .groupby(['setting', 'agent', 'day']).sum()\
+        .groupby(['setting', 'agent']).mean()
+    costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s[0]).groups()[0]).astype(int)
+    costs = costs.reset_index()
+
+    samples = [np.array(costs.loc[costs['agents'] == i, 'cost']) for i in pd.unique(costs['agents'])]
+    _, p_levene = stats.levene(*samples)
+    _, p_anova = stats.f_oneway(*samples)
+
+    print('Analysis of the influence of community scale:')
+    print(f'Same variance: p-value = {p_levene}')
+    print(f'Same mean: p-value = {p_anova}')
+
+
+def statistics_nr_rounds(df: pd.DataFrame) -> None:
+    settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-2-hetero',
+                '2-multi-agent-com-rounds-3-hetero']
+    df = df[df['setting'].isin(settings)]
+
+    df = df[['setting', 'agent', 'day', 'cost']] \
+        .groupby(['setting', 'agent', 'day']).sum() \
+        .groupby(['setting', 'agent']).mean()
+
+    df['rounds'] = df.index.map(lambda s: get_rounds(s[0])).astype(int)
+    rounds = df.reset_index()
+
+    samples = [np.array(rounds.loc[rounds['rounds'] == i, 'cost']) for i in pd.unique(rounds['rounds'])]
+    _, p_levene = stats.levene(*samples)
+    _, p_anova = stats.f_oneway(*samples)
+
+    print('Analysis of the influence of rounds:')
+    print(f'Same variance: p-value = {p_levene}')
+    print(f'Same mean: p-value = {p_anova}')
+
+
+def statistical_tests() -> None:
+    con = db.get_connection()
+
+    try:
+        df = db.get_test_results(con)
+        df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
+        df['time'] = df['time'].map(lambda t: t * 24)
+        df['heatpump'] *= 1e-3
+
+        statistics_community_scale(df)
+        statistics_nr_rounds(df)
+
+    finally:
+        if con:
+            con.close()
+
+
+save_figures = True
 if __name__ == "__main__":
+    # statistical_tests()
+
     plot_tabular_comparison(save_figs=save_figures)
-    # statistical_test_variance_community_size()
     compare_decisions(save_fig=save_figures)
     compare_decisions_artificial(save_fig=save_figures)
     compare_decisions_rounds(save_fig=save_figures)
