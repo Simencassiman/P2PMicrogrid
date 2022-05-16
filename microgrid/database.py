@@ -60,9 +60,16 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS validation_results 
-            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
+            (setting text NOT NULL, agent integer NOT NULL, day integer NOT NULL, time real NOT NULL,
             load real, pv real, temperature real, heatpump real, cost real, 
-            PRIMARY KEY (setting, agent, time) )
+            PRIMARY KEY (setting, agent, day, time) )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS test_results
+            (setting text NOT NULL, agent integer NOT NULL, day integer NOT NULL, time real NOT NULL,
+            load real, pv real, temperature real, heatpump real, cost real,
+            PRIMARY KEY (setting, agent, day, time) )
         """)
 
     else:
@@ -165,17 +172,18 @@ def log_training_progress(con: sqlite3.Connection,
                 cursor.close()
 
 
-def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
-                           heatpump: List[float], cost: List[float]) -> None:
+                           heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
         try:
-            query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?)"
+            query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
             n = len(load)
-            records = [*zip([setting] * n, [agent_id] * n, time, load, pv, temperature, heatpump, cost)]
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
+                            temperature, heatpump, cost)]
 
             cursor.executemany(query, records)
 
@@ -185,17 +193,17 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
                 cursor.close()
 
 
-def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
         try:
-            query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+            query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
             n = len(load)
-            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
                             temperature, heatpump, cost)]
 
             cursor.executemany(query, records)
@@ -229,10 +237,9 @@ if __name__ == '__main__':
         cursor = conn.cursor()
         try:
 
-            query = """ 
-                SELECT *  
-                FROM training_progress
-                WHERE setting LIKE '%no-com%' AND setting LIKE '%hetero'
+            query = """
+                SELECT *
+                FROM test_results
             """
 
             df = pd.read_sql_query(query, conn)

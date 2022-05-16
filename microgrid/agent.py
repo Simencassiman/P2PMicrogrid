@@ -302,7 +302,8 @@ class QAgent(RLAgent):
         self._num_balance_states = 20
 
         self._actions = np.array([0., 0.5, 1.])
-        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states, decay=0.9)
+        self.actor = rl.QActor(self._num_time_states, self._num_temp_states, self._num_balance_states, epsilon=0.6561,
+                               decay=0.9)
 
         self._last_action: int = -1
 

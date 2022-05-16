@@ -233,10 +233,14 @@ class CommunityMicrogrid:
         self.grid.reset()
 
 
-def main(con: sqlite3.Connection, analyse: bool =True) -> None:
+def main(con: sqlite3.Connection, load_agent: bool = False, analyse: bool = True) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
+
+    if load_agent:
+        for i, agent in enumerate(community.agents):
+            agent.actor.set_qtable(np.load(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy'))
 
     env_len = len(env)
     agents_len = len(community.agents)
@@ -249,7 +253,7 @@ def main(con: sqlite3.Connection, analyse: bool =True) -> None:
     # community.init_buffers()
 
     print("Training...")
-    with trange(max_episodes) as episodes:
+    with trange(starting_episodes, max_episodes) as episodes:
         for episode in episodes:
             reward, error = community.train_episode(rewards, losses, _rewards, _losses)
 
@@ -294,7 +298,7 @@ def main(con: sqlite3.Connection, analyse: bool =True) -> None:
         analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-def save_community_results(con: sqlite3.Connection, setting: str,
+def save_community_results(con: sqlite3.Connection, setting: str, days: List[int],
                            community: CommunityMicrogrid, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = [list(map(lambda l: float(l[0]), agent._load)) for agent in community.agents]
@@ -304,15 +308,17 @@ def save_community_results(con: sqlite3.Connection, setting: str,
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_test_results(con, setting, i, time, *data, implementation)
+        db.log_validation_results(con, setting, i, days, time, *data, implementation)
 
 
-def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None:
+def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
-    env_df, agent_dfs = ds.get_test_data()
+    env_df, agent_dfs = ds.get_validation_data()
+    days = env_df['day'].tolist()
+    env_df.drop(axis=1, labels='day', inplace=True)
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
 
@@ -330,7 +336,7 @@ def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None
 
     if con:
         print("Saving...")
-        save_community_results(con, setting, community, cost.numpy())
+        save_community_results(con, setting, days, community, cost.numpy())
 
     cost = tf.reduce_sum(cost, axis=0)
 
@@ -338,7 +344,7 @@ def load_and_run(setting: str, con: Optional[sqlite3.Connection] = None) -> None
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episodes = 0
+starting_episodes = 151
 max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 50
@@ -358,8 +364,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        main(db_connection, analyse=True)
-        # load_and_run(setting, db_connection)
+        # main(db_connection, load_agent=True, analyse=True)
+        load_and_run(db_connection)
     finally:
         if db_connection:
             db_connection.close()
