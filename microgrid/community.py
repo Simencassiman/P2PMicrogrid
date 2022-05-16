@@ -25,6 +25,12 @@ import dataset as ds
 import database as db
 
 
+# ------- Parameter setup ------- #
+seed = 42
+tf.random.set_seed(seed)
+np.random.seed(seed)
+
+
 def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
                   homogeneous: bool = False) -> CommunityMicrogrid:
     # Load time series
@@ -323,6 +329,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
     env_df, agent_dfs = ds.get_test_data() if is_testing else ds.get_validation_data()
     days = env_df['day'].tolist()
     env_df.drop(axis=1, labels='day', inplace=True)
+    for adf in agent_dfs:
+        adf.loc[env_df['time'] > 0.5, 'pv'] = 0
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
 
@@ -340,7 +348,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
 
     if con:
         print("Saving...")
-        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+        save_community_results(con, is_testing, pv_setting, days, community, cost.numpy())
 
     cost = tf.reduce_sum(cost, axis=0)
 
@@ -356,6 +364,7 @@ nr_agents = 2
 rounds = 1
 homogeneous = False
 setting = f'{nr_agents}-multi-agent-no-com-{"homo" if homogeneous else "hetero"}'
+pv_setting = f'{nr_agents}-agent-pv-drop-no-com'
 implementation = 'tabular'
 
 
