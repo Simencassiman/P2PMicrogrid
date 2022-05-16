@@ -14,6 +14,7 @@ from environment import env
 from electrical_asset import ElectricalAsset
 import dataset as ds
 
+np.random.seed(42)
 
 """
     Simulator parameters

@@ -229,19 +229,22 @@ def get_profiles_type(setting: str) -> str:
 
 
 def get_setting_type(setting: str) -> str:
-    return re.match(r'([0-9]-){0,1}([a-z-]+)-[a-z]+$', setting).groups()[1]
+    if re.match(r'([0-9]-){0,1}([a-z-]+)-[0-9\-a-z]+$', setting) is None:
+        print(setting)
+    return re.match(r'([0-9]-){0,1}([a-z-]+)-[0-9\-a-z]+$', setting).groups()[1]
 
 
 def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
-    settings = ['2-multi-agent-com-hetero', '2-multi-agent-com-homo',
+    settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-1-homo',
                 '2-multi-agent-no-com-hetero', '2-multi-agent-no-com-homo',
                 'single-agent']
     df = df[df['setting'].isin(settings)]
-    df_baselines = df.loc[df['implementation'].isin(['rule', 'semi-intelligent']), ['implementation', 'cost']]\
-        .groupby(['implementation']).sum()
+    df_baselines = df.loc[df['implementation'].isin(['rule-based', 'semi-intelligent']),
+                          ['implementation', 'day', 'cost']]\
+        .groupby(['implementation', 'day']).sum().groupby('implementation').mean()
     df = df[df['implementation'].isin(['tabular'])]
 
-    costs = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum().groupby('setting').mean()
+    costs = df[['setting', 'agent', 'day', 'cost']].groupby(['setting', 'agent', 'day']).sum().groupby('setting').mean()
     costs['profiles'] = list(map(lambda s: get_profiles_type(s), costs.index.tolist()))
     costs['setting'] = list(map(lambda s: get_setting_type(s), costs.index.tolist()))
     costs = costs.pivot(index='setting', columns='profiles', values='cost')
@@ -278,7 +281,7 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
         plt.savefig(f'{cf.PLOTS_PATH}/costs_plot.{figure_format}', format=figure_format)
 
 def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
-    timeslot_info = df[df['setting'] == '2-multi-agent-com-hetero'] \
+    timeslot_info = df[(df['setting'] == '2-multi-agent-com-rounds-1-hetero') & (df['day'] == 8)] \
         .pivot(index=['time'], columns=['agent'], values=['load', 'pv', 'temperature', 'heatpump'])
 
     time = np.arange(96)
@@ -351,11 +354,11 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
             '--', color=primary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-hetero', 'tabular')],
             '--', color=secondary_color)
-    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-homo', 'tabular')],
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-rounds-1-homo', 'tabular')],
             '-.', color=primary_color)
-    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-hetero', 'tabular')],
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-rounds-1-hetero', 'tabular')],
             '-.', color=secondary_color)
-    ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-hetero', 'tabular')],
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-rounds-1-hetero', 'tabular')],
             ':', color=primary_color)
     ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
                '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'],
@@ -378,13 +381,15 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
 
 
 def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
-    settings = ['2-multi-agent-com-hetero', '3-multi-agent-com-hetero', '4-multi-agent-com-hetero',
-                '5-multi-agent-com-hetero']
+    settings = ['2-multi-agent-com-rounds-1-hetero', '3-multi-agent-com-rounds-1-hetero',
+                '4-multi-agent-com-rounds-1-hetero', '5-multi-agent-com-rounds-1-hetero']
     df = df[df['setting'].isin(settings)]
 
-    df = df[['setting', 'agent', 'cost']].groupby(['setting', 'agent']).sum()
-    costs = df.groupby('setting').mean().rename(columns={'cost': 'mean'})
-    costs['std'] = df.groupby('setting').std()
+    df = df[['setting', 'agent', 'day', 'cost']]\
+        .groupby(['setting', 'agent', 'day']).sum()\
+        .groupby(['setting', 'agent']).mean()
+    costs = df.groupby(['setting']).mean().rename(columns={'cost': 'mean'})
+    costs['std'] = df.groupby(['setting']).std()
     costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s).groups()[0]).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
@@ -471,8 +476,9 @@ def compare_decisions() -> None:
     con = db.get_connection()
 
     try:
-        df = db.get_validation_results(con)
-        df = df[df['setting'].isin(['2-multi-agent-com-hetero', '2-multi-agent-no-com-hetero'])]
+        df = db.get_test_results(con)
+        df = df[(df['setting'].isin(['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-no-com-hetero']))
+                & (df['day'] == 8)]
 
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
@@ -495,9 +501,9 @@ def compare_decisions() -> None:
         fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
 
         # Powers
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-hetero', 0)], color=primary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-hetero', 1)], color=secondary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-hetero', 0)], '--', color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-1-hetero', 0)], color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-1-hetero', 1)], color=secondary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-rounds-1-hetero', 0)], '--', color=primary_color)
         ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
@@ -516,7 +522,7 @@ def compare_decisions() -> None:
 
         # agent 0
         ax[2].set_title("agent 0", fontsize=10, loc='right')
-        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-hetero', 0)],
+        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-rounds-1-hetero', 0)],
                   label='Communication', width=width, color=primary_color)
         ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-no-com-hetero', 0)],
                   label='No communication', width=width, color=secondary_color)
@@ -527,7 +533,7 @@ def compare_decisions() -> None:
 
         # agent 1
         ax[3].set_title("agent 1", fontsize=10, loc='right')
-        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-hetero', 1)],
+        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-rounds-1-hetero', 1)],
                   label='Communication', width=width, color=primary_color)
         ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-no-com-hetero', 1)],
                   label='No communication', width=width, color=secondary_color)
@@ -536,7 +542,7 @@ def compare_decisions() -> None:
 
         # Temperature
         ax[4].set_title("agent 0", fontsize=10, loc='right')
-        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-hetero', 0)],
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-1-hetero', 0)],
                    color=primary_color)
         ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-no-com-hetero', 0)],
                    color=secondary_color)
@@ -546,7 +552,7 @@ def compare_decisions() -> None:
                      bbox_to_anchor=(1.04, 0), loc="lower left")
 
         ax[5].set_title("agent 1", fontsize=10, loc='right')
-        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-hetero', 1)],
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-1-hetero', 1)],
                    color=primary_color)
         ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-no-com-hetero', 1)],
                    color=secondary_color)
@@ -573,7 +579,7 @@ def compare_decisions_rounds() -> None:
         df = db.get_rounds_decisions(con)
         df['decision'] *= 1e-3
 
-        decisions = df[(df['agent'] == 1) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero')]\
+        decisions = df[(df['agent'] == 1) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)]\
             .pivot(index=['time'], columns=['round'], values=['decision'])
 
         width = 0.2
@@ -697,11 +703,11 @@ def compare_decisions_artificial() -> None:
 
 
 def compare_q_values() -> None:
-    # q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
-    q_table = np.load(f'../models_tabular/single_agent_0.npy')
+    q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
+    # q_table = np.load(f'../models_tabular/single_agent_0.npy')
     q_table /= np.abs(q_table).max()
 
-    for i in range(10):
+    for i in range(20):
         fig, ax = plt.subplots(1, 20, figsize=(13, 4), sharey=True)
         fig.suptitle("Time", fontsize=13)
         ax[0].set_yticks(list(range(20)))
@@ -709,10 +715,10 @@ def compare_q_values() -> None:
 
         for t in range(20):
             # fig.suptitle(f't={t}')
-            im = ax[t].imshow(q_table[t, :, 0, :] - q_table.mean(), cmap='seismic',
-                                 norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
-            # im = ax[t].imshow(q_table[t, :, 0, i, :] - q_table.mean(), cmap='seismic',
-            #                   norm=matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1))
+            # im = ax[t].imshow(q_table[t, :, 0, :] - q_table.mean(), cmap='seismic',
+            #                      norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
+            im = ax[t].imshow(q_table[t, :, 8, i, :] - q_table.mean(), cmap='seismic',
+                              norm=matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1))
             if t == 10:
                 ax[t].set_xlabel("Action")
             # ax.set_yscale('symlog', linthresh=0.02)

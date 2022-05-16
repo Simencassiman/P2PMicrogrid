@@ -95,6 +95,38 @@ def insert_data_from_dict(cur: sqlite3.Cursor, df: pd.DataFrame) -> None:
     cur.executemany("INSERT INTO load VALUES (?,?,?,?)", load_records)
 
 
+def generate_additional_load(con: sqlite3) -> None:
+    if con is not None:
+        cursor = conn.cursor()
+
+        query_1 = """
+                        SELECT *
+                        FROM load
+                        WHERE date LIKE '%-10-%'
+                    """
+        query_2 = """
+                        UPDATE load
+                        SET l4 = ?
+                        WHERE date = ? AND time = ? AND utc = ?
+                    """
+
+        df = pd.read_sql_query(query_1, conn)
+
+        df.loc[df['l0'] > df['l0'].median() * 2, 'l0'] = df['l0'].median() * 2
+        max_l = df['l0'].max()
+        df['l0'] = 1 - df['l0'] / max_l
+        df['days'] = df['date'].map(lambda d: int(re.match(r'.*-([0-9]{2})$', d).groups()[0]))
+        days = df['days'].unique().tolist()
+        df2 = pd.concat(map(lambda d: df[df['days'] == d], np.random.permutation(days))).reset_index()
+        df['l1'] = df2['l0'] * max_l
+
+        records = [*zip(df['l1'], df['date'], df['time'], df['utc'])]
+
+        cursor.executemany(query_2, records)
+
+        conn.commit()
+
+
 def get_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.DataFrame:
 
     query_env = """
@@ -179,6 +211,20 @@ def log_training_progress(con: sqlite3.Connection,
                 cursor.close()
 
 
+def get_training_progress(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT *
+            FROM training_progress
+        """
+
+        df = pd.read_sql_query(query, con)
+
+        return df
+
+    return None
+
+
 def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
@@ -198,6 +244,20 @@ def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
         finally:
             if cursor:
                 cursor.close()
+
+
+def get_validation_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT *
+            FROM validation_results
+        """
+
+        df = pd.read_sql_query(query, con)
+
+        return df
+
+    return None
 
 
 def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
@@ -276,7 +336,7 @@ if __name__ == '__main__':
 
             query = """
                 SELECT *
-                FROM rounds_comparison
+                FROM training_progress
             """
 
             df = pd.read_sql_query(query, conn)
