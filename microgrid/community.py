@@ -298,7 +298,8 @@ def main(con: sqlite3.Connection, load_agent: bool = False, analyse: bool = True
         analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-def save_community_results(con: sqlite3.Connection, setting: str, days: List[int],
+def save_community_results(con: sqlite3.Connection, is_testing: bool,
+                           setting: str, days: List[int],
                            community: CommunityMicrogrid, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = [list(map(lambda l: float(l[0]), agent._load)) for agent in community.agents]
@@ -308,15 +309,18 @@ def save_community_results(con: sqlite3.Connection, setting: str, days: List[int
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
-        db.log_validation_results(con, setting, i, days, time, *data, implementation)
+        if is_testing:
+            db.log_test_results(con, setting, i, days, time, *data, implementation)
+        else:
+            db.log_validation_results(con, setting, i, days, time, *data, implementation)
 
 
-def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
+def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False) -> None:
 
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
 
-    env_df, agent_dfs = ds.get_validation_data()
+    env_df, agent_dfs = ds.get_test_data() if is_testing else ds.get_validation_data()
     days = env_df['day'].tolist()
     env_df.drop(axis=1, labels='day', inplace=True)
     if homogeneous:
@@ -336,7 +340,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
 
     if con:
         print("Saving...")
-        save_community_results(con, setting, days, community, cost.numpy())
+        save_community_results(con, is_testing, setting, days, community, cost.numpy())
 
     cost = tf.reduce_sum(cost, axis=0)
 
@@ -365,7 +369,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, load_agent=True, analyse=True)
-        load_and_run(db_connection)
+        load_and_run(db_connection, is_testing=True)
     finally:
         if db_connection:
             db_connection.close()

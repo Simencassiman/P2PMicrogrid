@@ -111,9 +111,11 @@ nr_actions = 1
 
 
 if __name__ == '__main__':
-    env_df, agent_dfs = get_validation_data()
-    print(env_df.head())
-
-    env_df.to_csv('../data/data_env_validation.csv')
-    for adf in agent_dfs:
-        adf.to_csv('../data/data_agent_validation.csv')
+    env_df, agent_dfs = get_test_data()
+    plt.plot(np.arange(len(agent_dfs[0]['pv'])), agent_dfs[0]['pv'])
+    plt.show()
+    # print(env_df.head())
+    #
+    # env_df.to_csv('../data/data_env_validation.csv')
+    # for adf in agent_dfs:
+    #     adf.to_csv('../data/data_agent_validation.csv')

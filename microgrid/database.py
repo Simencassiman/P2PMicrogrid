@@ -60,16 +60,16 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS validation_results 
-            (setting text NOT NULL, agent integer NOT NULL, day integer NOT NULL, time real NOT NULL,
-            load real, pv real, temperature real, heatpump real, cost real, 
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
+             time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real, 
             PRIMARY KEY (setting, agent, day, time) )
         """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS test_results
-            (setting text NOT NULL, agent integer NOT NULL, day integer NOT NULL, time real NOT NULL,
-            load real, pv real, temperature real, heatpump real, cost real,
-            PRIMARY KEY (setting, agent, day, time) )
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL, 
+            time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real,
+            PRIMARY KEY (setting, implementation, agent, day, time) )
         """)
 
     else:
@@ -238,7 +238,7 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT *
+                SELECT * 
                 FROM test_results
             """
 
@@ -246,6 +246,12 @@ if __name__ == '__main__':
             print(df)
 
             # cursor.execute(query)
+            # cursor.execute("""
+            #             CREATE TABLE IF NOT EXISTS test_results
+            #             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
+            #              time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real,
+            #             PRIMARY KEY (setting, agent, day, time) )
+            #         """)
             # conn.commit()
 
         finally:
