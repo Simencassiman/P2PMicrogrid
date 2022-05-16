@@ -20,7 +20,7 @@ conn = get_connection(cf.DB_PATH)
 
 # Define data splits
 data_month = 10
-testing_days = [10]
+testing_days = [8, 9, 10, 19, 20]
 validation_days = [18]
 training_days = list(range(11, 18))
 
@@ -30,7 +30,7 @@ start = datetime(2021, data_month, start_day)
 end = datetime(2021, data_month, end_day) + timedelta(days=1)   # Last day is not included, so add 1 day
 
 # Define columns with relevant information, used to select from dataframe
-env_cols = ['time', 'temperature']
+env_cols = ['day', 'time', 'temperature']
 agent_cols = ['pv']
 load_cols = ['l0', 'l1', 'l2', 'l3', 'l4']
 cols = env_cols + agent_cols + load_cols
@@ -69,14 +69,13 @@ def get_data(days: List[int]) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
     try:
         # Get data from local database
         df = db.get_data(con, start, end)
-    except:
-        pass
     finally:
         if con:
             con.close()
 
     # Only keep relevant days
-    df = df[df['date'].map(lambda d: int(re.match(r'.*-([0-9]+)$', d).groups()[0]) in days)]
+    df['day'] = df['date'].map(lambda d: int(re.match(r'.*-([0-9]+)$', d).groups()[0]))
+    df = df[df['day'].map(lambda d: d in days)]
 
     # Process data to match observation data for RL agents
     df = process_dataframe(df)
@@ -87,7 +86,10 @@ def get_data(days: List[int]) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
 
 
 def get_train_data() -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
-    return get_data(training_days)
+    env_df, agent_dfs = get_data(training_days)
+    env_df.drop(axis=1, labels='day', inplace=True)
+
+    return env_df, agent_dfs
 
 
 def get_validation_data() -> Tuple[pd.DataFrame, List[pd.DataFrame]]:

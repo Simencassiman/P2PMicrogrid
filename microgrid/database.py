@@ -1,12 +1,11 @@
 # Python Libraries
 import sqlite3
 import os.path as osp
-import traceback
 from typing import List, Union
+import matplotlib.pyplot as plt
 import re
 
 import numpy as np
-import pandas
 import pandas as pd
 from datetime import datetime
 
@@ -41,7 +40,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS load
             (date text NOT NULL, time text NOT NULL, utc text NOT NULL, 
-            l0 real, l1 real, l2 real, l3 real, l4 real, 
+            load_0 real,
             PRIMARY KEY (date, time, utc) )
         """)
 
@@ -60,31 +59,24 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS training_progress 
-            (setting text NOT NULL, agent text NOT NULL, episode text NOT NULL,
-             reward real, error real,
-            PRIMARY KEY (setting, agent, episode) )
-        """)
-
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS validation_results 
-            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
-            load real, pv real, temperature real, heatpump real, cost real, 
-            PRIMARY KEY (setting, agent, time) )
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
+             time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real, 
+            PRIMARY KEY (setting, agent, day, time) )
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS test_results 
-            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL,
-            load real, pv real, temperature real, heatpump real, cost real, 
-            PRIMARY KEY (setting, agent, time) )
+            CREATE TABLE IF NOT EXISTS test_results
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL, 
+            time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real,
+            PRIMARY KEY (setting, implementation, agent, day, time) )
         """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS rounds_comparison  
-            (setting text NOT NULL, agent integer NOT NULL, time real NOT NULL, round integer NOT NULL,
-             decision real,
-            PRIMARY KEY (setting, agent, time, round))
+            (setting text NOT NULL, agent integer NOT NULL, day integer NOT NULL, time real NOT NULL,
+             round integer NOT NULL, decision real,
+            PRIMARY KEY (setting, agent, day, time, round))
         """)
 
     else:
@@ -125,38 +117,6 @@ def get_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.Data
     return df
 
 
-def generate_additional_load(con: sqlite3) -> None:
-    if con is not None:
-        cursor = conn.cursor()
-
-        query_1 = """
-                        SELECT *
-                        FROM load
-                        WHERE date LIKE '%-10-%'
-                    """
-        query_2 = """
-                        UPDATE load
-                        SET l4 = ?
-                        WHERE date = ? AND time = ? AND utc = ?
-                    """
-
-        df = pd.read_sql_query(query_1, conn)
-
-        df.loc[df['l0'] > df['l0'].median() * 2, 'l0'] = df['l0'].median() * 2
-        max_l = df['l0'].max()
-        df['l0'] = 1 - df['l0'] / max_l
-        df['days'] = df['date'].map(lambda d: int(re.match(r'.*-([0-9]{2})$', d).groups()[0]))
-        days = df['days'].unique().tolist()
-        df2 = pd.concat(map(lambda d: df[df['days'] == d], np.random.permutation(days))).reset_index()
-        df['l1'] = df2['l0'] * max_l
-
-        records = [*zip(df['l1'], df['date'], df['time'], df['utc'])]
-
-        cursor.executemany(query_2, records)
-
-        conn.commit()
-
-
 def get_load_data(con: sqlite3.Connection, start: datetime, end: datetime) -> pd.DataFrame:
     query = """
         SELECT * 
@@ -179,7 +139,8 @@ def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: in
 
             con.commit()
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
 
 def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], time: List[float],
@@ -198,7 +159,8 @@ def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], t
 
             con.commit()
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
 
 def log_training_progress(con: sqlite3.Connection,
@@ -213,71 +175,50 @@ def log_training_progress(con: sqlite3.Connection,
 
             con.commit()
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
 
-def get_training_progress(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
-    if con:
-        query = """
-            SELECT *
-            FROM training_progress
-        """
-
-        df = pd.read_sql_query(query, con)
-
-        return df
-
-    return None
-
-
-def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [agent_id] * n, time, load, pv,
-                        temperature, heatpump, cost, [implementation] * n)]
+            n = len(load)
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
+                            temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
-
-
-def get_validation_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
-    if con:
-        query = """
-            SELECT *
-            FROM validation_results
-        """
-
-        df = pd.read_sql_query(query, con)
-
-        return df
-
-    return None
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
-def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
-                        temperature, heatpump, cost)]
+            n = len(load)
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
+                            temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
@@ -294,16 +235,16 @@ def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
     return None
 
 
-def log_rounds_decision(con: sqlite3.Connection, setting: str, agent: int, time: List[float], round: int,
-                        decisions: List[float]) -> None:
+def log_rounds_decision(con: sqlite3.Connection, setting: str, agent: int, days: List[int],
+                        time: List[float], round: int, decisions: List[float]) -> None:
     if con:
         cursor = con.cursor()
 
         try:
-            query = "INSERT INTO rounds_comparison VALUES (?,?,?,?,?)"
+            query = "INSERT INTO rounds_comparison VALUES (?,?,?,?,?,?)"
 
             nr_entries = len(time)
-            data = [*zip([setting] * nr_entries, [agent] * nr_entries, time, [round] * nr_entries, decisions)]
+            data = [*zip([setting] * nr_entries, [agent] * nr_entries, days, time, [round] * nr_entries, decisions)]
 
             cursor.executemany(query, data)
             con.commit()
@@ -330,13 +271,12 @@ if __name__ == '__main__':
 
     if conn is not None:
 
+        cursor = conn.cursor()
         try:
-            cursor = conn.cursor()
 
             query = """
-                SELECT *        
-                FROM training_progress
-                WHERE setting LIKE '%rounds-2%'
+                SELECT *
+                FROM rounds_comparison
             """
 
             df = pd.read_sql_query(query, conn)
@@ -346,8 +286,7 @@ if __name__ == '__main__':
             # conn.commit()
 
         finally:
-            if cursor:
-                cursor.close()
+            cursor.close()
             conn.close()
 
     else:
