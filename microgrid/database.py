@@ -238,8 +238,9 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT *
+                SELECT * 
                 FROM validation_results 
+                WHERE setting LIKE '%no-com%hetero'
             """
 
             df = pd.read_sql_query(query, conn)
