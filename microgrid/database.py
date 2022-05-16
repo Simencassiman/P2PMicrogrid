@@ -335,8 +335,9 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT *
-                FROM training_progress
+                SELECT * 
+                FROM test_results
+                WHERE setting LIKE '%pv%'
             """
 
             df = pd.read_sql_query(query, conn)

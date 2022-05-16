@@ -229,9 +229,10 @@ def get_profiles_type(setting: str) -> str:
 
 
 def get_setting_type(setting: str) -> str:
-    if re.match(r'([0-9]-){0,1}([a-z-]+)-[0-9\-a-z]+$', setting) is None:
-        print(setting)
     return re.match(r'([0-9]-){0,1}([a-z-]+)-[0-9\-a-z]+$', setting).groups()[1]
+
+def get_rounds(setting: str) -> str:
+    return re.match(r'([0-9]-){0,1}([a-z-]+)-rounds-([0-9])-[a-z]+$', setting).groups()[2]
 
 
 def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
@@ -278,7 +279,8 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     fig.tight_layout()
 
     if save_fig:
-        plt.savefig(f'{cf.PLOTS_PATH}/costs_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/costs_plot.{figure_format}', format=figure_format)
+
 
 def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     timeslot_info = df[(df['setting'] == '2-multi-agent-com-rounds-1-hetero') & (df['day'] == 8)] \
@@ -340,7 +342,7 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
         ax[i].tick_params(axis='y', colors=base_color)
 
     if save_fig:
-        plt.savefig(f'{cf.PLOTS_PATH}/day_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/day_plot.{figure_format}', format=figure_format)
 
 
 def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
@@ -377,7 +379,7 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
     fig.tight_layout()
 
     if save_fig:
-        plt.savefig(f'{cf.PLOTS_PATH}/learning.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/learning.{figure_format}', format=figure_format)
 
 
 def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
@@ -413,7 +415,42 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     fig.tight_layout()
 
     if save_fig:
-        plt.savefig(f'{cf.PLOTS_PATH}/scaling_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/scaling_plot.{figure_format}', format=figure_format)
+
+
+def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
+    settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-2-hetero',
+                '2-multi-agent-com-rounds-3-hetero']
+    df = df[df['setting'].isin(settings)]
+
+    df = df[['setting', 'agent', 'day', 'cost']]\
+        .groupby(['setting', 'agent', 'day']).sum()\
+        .groupby(['setting', 'agent']).mean()
+    costs = df.groupby(['setting']).mean().rename(columns={'cost': 'mean'})
+    costs['std'] = df.groupby(['setting']).std()
+    costs['rounds'] = costs.index.map(lambda s: get_rounds(s)).astype(int)
+
+    plt.rcParams['axes.titlepad'] = 14  # pad is in points...
+    fig, ax = plt.subplots(figsize=(4.5, 6.5))
+    plt.title("Average cost vs. number of decision rounds", color=base_color, fontsize=title_fontsize)
+
+    ax.errorbar(costs['rounds'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
+    ax.set_xlabel("Number of rounds", color=base_color, fontsize=axis_label_fontsize)
+    ax.set_ylim(0, 2)
+    ax.set_ylabel("Cost [€]", color=base_color, fontsize=axis_label_fontsize)
+
+    # Additional coloring
+    ax.spines['bottom'].set_color(base_color)
+    ax.spines['top'].set_color(base_color)
+    ax.spines['right'].set_color(base_color)
+    ax.spines['left'].set_color(base_color)
+    ax.tick_params(axis='x', colors=base_color)
+    ax.tick_params(axis='y', colors=base_color)
+
+    fig.tight_layout()
+
+    if save_fig:
+        plt.savefig(f'{cf.FIGURES_PATH}/scaling_plot.{figure_format}', format=figure_format)
 
 
 def plot_tabular_comparison(save_figs: bool = False) -> None:
@@ -432,6 +469,7 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
         make_costs_plot(df, save_figs)
         make_day_plot(df, save_figs)
         make_nr_agent_dependency_plot(df, save_figs)
+        make_nr_rounds_dependency_plot(df, save_figs)
 
     finally:
         if con:
@@ -472,7 +510,7 @@ def statistical_test_variance_community_size() -> None:
             con.close()
 
 
-def compare_decisions() -> None:
+def compare_decisions(save_fig: bool = False) -> None:
     con = db.get_connection()
 
     try:
@@ -567,50 +605,99 @@ def compare_decisions() -> None:
 
         fig.tight_layout()
 
+        if save_fig:
+            plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot.{figure_format}', format=figure_format)
+
     finally:
         if con:
             con.close()
 
 
-def compare_decisions_rounds() -> None:
+def compare_decisions_rounds(save_fig: bool = False) -> None:
     con = db.get_connection()
 
     try:
         df = db.get_rounds_decisions(con)
         df['decision'] *= 1e-3
-
-        decisions = df[(df['agent'] == 1) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)]\
+        decisions = df[(df['agent'] == 0) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)] \
             .pivot(index=['time'], columns=['round'], values=['decision'])
 
+        df = db.get_test_results(con)
+        df = df[(df['agent'] == 0) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)]
+        df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
+        df['time'] = df['time'].map(lambda t: t * 24)
+        df['heatpump'] *= 1e-3
+        timeslot_info = df.pivot(index=['time'], columns=['setting', 'agent'],
+                                 values=['load', 'pv', 'temperature', 'heatpump'])
+        time = np.arange(96)
+        grid_price = (
+                (cf.GRID_COST_AVG
+                 + cf.GRID_COST_AMPLITUDE
+                 * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+                 ) / cf.CENTS_PER_EURO  # from c€ to €
+        )
+        injection_price = np.zeros(grid_price.shape)
+        injection_price[:] = grid_price.min()[None]
+        p2p_price = (grid_price + injection_price) / 2
+
+        # Make plot
+        fig, ax = plt.subplots(4, 1, figsize=(15, 8), sharex=True)
+        fig.suptitle("Agent decisions for each round of the time slot", color=base_color, fontsize=title_fontsize)
+
+        # Powers
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-3-hetero', 0)], color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-rounds-3-hetero', 0)], color=secondary_color)
+        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+        ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
+        ax[0].legend(["Base Load", "PV"], labelcolor=base_color)
+
+        # Prices
+        ax[1].plot(time, grid_price, color=primary_color)
+        ax[1].plot(time, injection_price, color=secondary_color)
+        ax[1].plot(time, p2p_price, '--', color=primary_color)
+        ax[1].set_yticks([0.07, 0.12, 0.17])
+        ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
+        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color)
+
+        # Heat pump
         width = 0.2
         x = np.array(decisions.index * 96)
 
-        fig, ax = plt.subplots(figsize=(14, 3))
-        fig.suptitle("Agent decisions for each round of the time slot")
+        ax[2].bar(x - 1.5 * width, decisions.loc[:, ('decision', 0)], label='Round 0', width=width)
+        ax[2].bar(x - 0.5 * width, decisions.loc[:, ('decision', 1)], label='Round 1', width=width)
+        ax[2].bar(x + 0.5 * width, decisions.loc[:, ('decision', 2)], label='Round 2', width=width)
+        ax[2].bar(x + 1.5 * width, decisions.loc[:, ('decision', 3)], label='Round 3', width=width)
 
-        ax.bar(x - 1.5 * width, decisions.loc[:, ('decision', 0)], label='Round 0', width=width)
-        ax.bar(x - 0.5 * width, decisions.loc[:, ('decision', 1)], label='Round 1', width=width)
-        ax.bar(x + 0.5 * width, decisions.loc[:, ('decision', 2)], label='Round 2', width=width)
-        ax.bar(x + 1.5 * width, decisions.loc[:, ('decision', 3)], label='Round 3', width=width)
+        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+        ax[2].legend()
 
-        ax.set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
-        ax.set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
-        ax.xaxis.set_minor_locator(MultipleLocator(1))
-        ax.set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
-        ax.set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax.legend()
+        # Temperature
+        ax[3].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-3-hetero', 0)],
+                   color=primary_color)
+        ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
+        ax[3].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
+        ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+        ax[3].set_yticks([20, 22])
+        ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+        ax[3].xaxis.set_minor_locator(MultipleLocator(1))
+
+        fig.tight_layout()
+
+        if save_fig:
+            plt.savefig(f'{cf.FIGURES_PATH}/rounds_plot.{figure_format}', format=figure_format)
 
     finally:
         if con:
             con.close()
 
 
-def compare_decisions_artificial() -> None:
+def compare_decisions_artificial(save_fig: bool = False) -> None:
     con = db.get_connection()
 
     try:
-        df = db.get_validation_results(con)
-        df = df[df['setting'].isin(['2-agent-pv-drop-com', '2-agent-pv-drop-no-com'])]
+        df = db.get_test_results(con)
+        df = df[(df['setting'].isin(['2-agent-pv-drop-com', '2-agent-pv-drop-no-com'])) & (df['day'] == 8)]
 
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
@@ -698,6 +785,10 @@ def compare_decisions_artificial() -> None:
         #              bbox_to_anchor=(1.04, 1), loc="upper left")
 
         fig.tight_layout()
+
+        if save_fig:
+            plt.savefig(f'{cf.FIGURES_PATH}/artificial_pv_decisions_plot.{figure_format}', format=figure_format)
+
     finally:
         con.close()
 
@@ -730,12 +821,13 @@ def compare_q_values() -> None:
     # fig.tight_layout()
 
 
+save_figures = False
 if __name__ == "__main__":
-    # plot_tabular_comparison(save_figs=False)
+    plot_tabular_comparison(save_figs=save_figures)
     # statistical_test_variance_community_size()
-    # compare_decisions()
-    # compare_decisions_artificial()
-    # compare_decisions_rounds()
-    compare_q_values()
+    compare_decisions(save_fig=save_figures)
+    compare_decisions_artificial(save_fig=save_figures)
+    compare_decisions_rounds(save_fig=save_figures)
+    # compare_q_values()
 
     plt.show()

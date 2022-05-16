@@ -431,7 +431,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, analyse=True)
-        load_and_run(db_connection, is_testing=False)
+        load_and_run(db_connection, is_testing=True, analyse=False)
     finally:
         if db_connection:
             db_connection.close()
