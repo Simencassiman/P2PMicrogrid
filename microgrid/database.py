@@ -5,6 +5,7 @@ from typing import List, Union
 import matplotlib.pyplot as plt
 import re
 
+import numpy as np
 import pandas as pd
 from datetime import datetime
 
@@ -58,10 +59,17 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS training_progress 
-            (setting text NOT NULL, agent text NOT NULL, episode text NOT NULL,
-             reward real, error real,
-            PRIMARY KEY (setting, agent, episode) )
+            CREATE TABLE IF NOT EXISTS validation_results 
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
+             time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real, 
+            PRIMARY KEY (setting, implementation, agent, day, time) )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS test_results
+            (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL, 
+            time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real,
+            PRIMARY KEY (setting, implementation, agent, day, time) )
         """)
 
     else:
@@ -116,79 +124,94 @@ def log_training(con: sqlite3.Connection, settings: str, trial: int, episode: in
                  training: float, validation: float, q_error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        cursor.execute(query, (settings, trial, episode, training, validation, q_error))
+        try:
+            query = "INSERT INTO hyperparameters_single_day VALUES (?,?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (settings, trial, episode, training, validation, q_error))
 
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_predictions(con: sqlite3.Connection, settings: str, date: List[float], time: List[float],
                     load: List[float], pv: List[float], target_load: List[float], target_pv: List[float]) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        time = list(map(lambda t: str(t), time))
-        n = len(load)
-        records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
+        try:
+            query = "INSERT INTO single_day_best_results VALUES (?,?,?,?,?,?,?)"
 
-        cursor.executemany(query, records)
+            time = list(map(lambda t: str(t), time))
+            n = len(load)
+            records = [*zip([settings] * n, date, time, load, pv, target_load, target_pv)]
 
-        con.commit()
+            cursor.executemany(query, records)
 
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def log_training_progress(con: sqlite3.Connection,
                           setting: str, agent_type: str, episode: int, reward: float, error: float) -> None:
     if con is not None:
         cursor = con.cursor()
-        query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        cursor.execute(query, (setting, agent_type, episode, reward, error))
+        try:
+            query = "INSERT INTO training_progress VALUES (?,?,?,?,?)"
 
-        con.commit()
+            cursor.execute(query, (setting, agent_type, episode, reward, error))
 
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
-def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_validation_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO validation_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [agent_id] * n, time, load, pv,
-                        temperature, heatpump, cost, [implementation] * n)]
+            n = len(load)
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
+                            temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
-def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int,
+def log_test_results(con: sqlite3.Connection, setting: str, agent_id: int, days: List[int],
                            time: List[float], load: List[float], pv: List[float], temperature: List[float],
                            heatpump: List[float], cost: List[float], implementation: str) -> None:
     if con is not None:
         cursor = con.cursor()
 
-        query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?)"
+        try:
+            query = "INSERT INTO test_results VALUES (?,?,?,?,?,?,?,?,?,?)"
 
-        n = len(load)
-        records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, time, load, pv,
-                        temperature, heatpump, cost)]
+            n = len(load)
+            records = [*zip([setting] * n, [implementation] * n, [agent_id] * n, days, time, load, pv,
+                            temperature, heatpump, cost)]
 
-        cursor.executemany(query, records)
+            cursor.executemany(query, records)
 
-        con.commit()
-        cursor.close()
+            con.commit()
+        finally:
+            if cursor:
+                cursor.close()
 
 
 def get_test_results(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
@@ -209,109 +232,25 @@ if __name__ == '__main__':
 
     conn = get_connection()
 
-    # start = datetime(2021, 11, 1)
-    # val_start = datetime(2021, 11, 15)
-    # val_end = datetime(2021, 11, 21)
-    # end = datetime(2021, 12, 1)
-
     if conn is not None:
+
+        cursor = conn.cursor()
         try:
-            cursor = conn.cursor()
 
             query = """
-                DELETE  
+                SELECT *  
                 FROM test_results
-                WHERE setting LIKE '%single-agent%'
             """
 
-            # df = pd.read_sql_query(query, conn)
-            # print(df)
-
-            cursor.execute(query)
-            conn.commit()
+            df = pd.read_sql_query(query, conn)
+            print(df)
+            # df.to_sql('test_results', conn, if_exists='append', index=False)
+            # cursor.execute(query)
+            # conn.commit()
 
         finally:
+            cursor.close()
             conn.close()
-
-        # query = """
-        #     SELECT settings, time, load
-        #     FROM single_day_best_results
-        #     WHERE settings LIKE '%episodes=10000%' AND settings LIKE '%ls=1e-06%'
-        # """
-        #
-        # df = pd.read_sql_query(query, conn)
-        # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
-        # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
-        # df['time'] = df['time'].apply(lambda x: float(x))
-        # settings = df['settings']
-        # df = df.pivot(index='time', columns='settings', values='load')
-        # target = pd.read_sql_query("""
-        #     SELECT time, target_load
-        #     FROM single_day_best_results
-        #     WHERE settings LIKE '%bs=32;gamma=0.95;ls=1e-07%' AND settings LIKE '%episodes=20000%'
-        #     """, conn)
-        # target['time'] = target['time'].apply(lambda x: float(x))
-        #
-        # ax = df.plot(xticks=df.index, ylabel='Load [-]')
-        # # ax.get_legend().remove()
-        # # ax.set_xticks([i * 1000 for i in range(21) if i % 2 == 0])
-        # ax.plot(target['time'], target['target_load'])
-        #
-        # plt.show()
-
-        # Check training and validation results
-        # query = """
-        #     SELECT *
-        #     FROM training_progress
-        # """
-        #
-        # df = pd.read_sql_query(query, conn)
-        # print(df.tail())
-        # print(df.columns)
-        # pattern = r"(bs=.+?ls=1e-0[0-9]{1})"
-        # df['settings'] = df['settings'].apply(lambda x: re.search(pattern, x).group())
-        # settings = df['settings']
-        # df = df.pivot(index='episode', columns='settings', values='train')
-        # print(df.columns)
-        #
-        # ax = df.plot(xticks=df.index, ylabel='Reward')
-        # ax.get_legend().remove()
-        # ax.set_xticks([i * 1000 for i in range(21) if i % 2 == 0])
-        #
-        # plt.show()
-
-        # print(df['episode'].head())
-        # print(df.columns)
-
-        # df = get_load_data(conn, start, end)
-        #
-        # df['date'] = df['date'].map(lambda t: datetime.strptime(t, '%Y-%m-%d'))
-        #
-        # train_df = df[(df['date'] < val_start) | (df['date'] > val_end)]
-        # val_df = df[(val_start <= df['date']) & (df['date'] <= val_end)]
-        #
-        # print(train_df.head())
-        # print(train_df.tail())
-        # print(train_df[train_df['date'] == datetime(2021,11,16)])
-        # print(val_df.head())
-        # print(val_df.tail())
-        #
-        # def compute_time_slot(time) -> int:
-        #     t = datetime.strptime(time, '%H:%M:%S')
-        #
-        #     return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
-        #
-        # df['time'] = df['time'].map(lambda t: compute_time_slot(t))
-        # df[['year', 'month', 'day']] = df['date'].str.split(pat='-', expand=True)
-        # df.drop(['date', 'utc', 'year'], axis=1, inplace=True)
-        # df = df[['time', 'day', 'month', 'l0']]
-        # df['time'] = df['time'] / 96.
-        # df['day'] = df['day'].astype(float) / 31.
-        # df['month'] = df['month'].astype(float) / 12.
-        # df['l0'] = df['l0'].astype(float) / df['l0'].max().astype(float)
-        #
-        # print(df.head())
-        # print(df.tail())
 
     else:
         print('Could not connect to database')

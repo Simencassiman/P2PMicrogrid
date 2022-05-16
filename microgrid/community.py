@@ -426,26 +426,33 @@ def save_times(train_time: Optional[float] = None, run_time: Optional[float] = N
         json.dump(data, data_file)
 
 
-def save_community_results(con: sqlite3.Connection, setting: str,
+def save_community_results(con: sqlite3.Connection, is_testing: bool,
+                           setting: str, days: List[int],
                            community: SingleAgentCommunity, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = list(map(lambda l: float(l[0]), community.agent._load))
     pvs = community.agent.pv.get_history()
     temperatures = community.agent.heating.get_history()
     heatpump = community.agent.heating._power_history
-    costs = cost.tolist()
+    costs = cost[:, 0].tolist()
 
-    db.log_test_results(con, setting, 0, time, loads, pvs, temperatures, heatpump, costs, implementation)
+    if is_testing:
+        db.log_test_results(con, setting, 0, days, time, loads, pvs, temperatures, heatpump, costs, implementation)
+    else:
+        db.log_validation_results(con, setting, 0, days, time, loads, pvs, temperatures, heatpump,
+                                  costs, implementation)
 
 
-def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
+def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False) -> None:
 
     print("Creating community...")
     # community = get_rule_based_community(nr_agents)
     # community = get_rl_based_community(nr_agents)
     community = get_baseline_community()
 
-    env_df, agent_df = ds.get_test_data()
+    env_df, agent_df = ds.get_test_data() if is_testing else ds.get_validation_data()
+    days = env_df['day'].tolist()
+    env_df.drop(axis=1, labels='day', inplace=True)
     env.setup(ds.dataframe_to_dataset(env_df))
     for agent in community.agents:
         agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
@@ -457,12 +464,13 @@ def load_and_run(con: Optional[sqlite3.Connection] = None) -> None:
     time_start_run = time.time()
     power, cost = community.run()
     time_end_run = time.time()
-    cost = tf.math.reduce_sum(cost, axis=0)
 
     if con:
         print("Saving...")
         save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, setting, community, cost.numpy())
+        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+
+    cost = tf.math.reduce_sum(cost, axis=0)
 
     print("Analysing...")
     analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
@@ -474,7 +482,7 @@ min_episodes_criterion = 50
 save_episodes = 50
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'tabular'
+implementation = 'semi-intelligent'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -485,8 +493,8 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        main(db_connection, analyse=True)
-        # load_and_run()
+        # main(db_connection, analyse=True)
+        load_and_run(db_connection, is_testing=True)
     finally:
         if db_connection:
             db_connection.close()
