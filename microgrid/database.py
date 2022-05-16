@@ -62,7 +62,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             CREATE TABLE IF NOT EXISTS validation_results 
             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
              time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real, 
-            PRIMARY KEY (setting, agent, day, time) )
+            PRIMARY KEY (setting, implementation, agent, day, time) )
         """)
 
         cursor.execute("""
@@ -238,20 +238,14 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT * 
-                FROM test_results
+                SELECT *
+                FROM validation_results 
             """
 
             df = pd.read_sql_query(query, conn)
             print(df)
 
             # cursor.execute(query)
-            # cursor.execute("""
-            #             CREATE TABLE IF NOT EXISTS test_results
-            #             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
-            #              time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real,
-            #             PRIMARY KEY (setting, agent, day, time) )
-            #         """)
             # conn.commit()
 
         finally:

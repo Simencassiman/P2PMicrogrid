@@ -355,7 +355,7 @@ save_episodes = 50
 nr_agents = 2
 rounds = 1
 homogeneous = False
-setting = f'{nr_agents}-multi-agent-rounds-{rounds}-no-com-{"homo" if homogeneous else "hetero"}'
+setting = f'{nr_agents}-multi-agent-no-com-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
 
 
