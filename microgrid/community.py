@@ -372,6 +372,8 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
     env_df, agent_dfs = ds.get_test_data() if is_testing else ds.get_validation_data()
     days = env_df['day'].tolist()
     env_df.drop(axis=1, labels='day', inplace=True)
+    for adf in agent_dfs:
+        adf.loc[env_df['time'] > 0.5, 'pv'] = 0
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
 
@@ -401,7 +403,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
     if con:
         print("Saving...")
         # save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+        save_community_results(con, is_testing, pv_setting, days, community, cost.numpy())
 
     cost = tf.math.reduce_sum(cost, axis=0)
 
@@ -418,6 +420,7 @@ nr_agents = 2
 rounds = 1
 homogeneous = False
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
+pv_setting = f'{nr_agents}-agent-pv-drop-com'
 implementation = 'tabular'
 
 
@@ -431,7 +434,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, analyse=True)
-        load_and_run(db_connection, is_testing=False)
+        load_and_run(db_connection, is_testing=True)
     finally:
         if db_connection:
             db_connection.close()
