@@ -62,7 +62,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             CREATE TABLE IF NOT EXISTS validation_results 
             (setting text NOT NULL, implementation text NOT NULL, agent integer NOT NULL, day integer NOT NULL,
              time real NOT NULL, load real, pv real, temperature real, heatpump real, cost real, 
-            PRIMARY KEY (setting, agent, day, time) )
+            PRIMARY KEY (setting, implementation, agent, day, time) )
         """)
 
         cursor.execute("""
