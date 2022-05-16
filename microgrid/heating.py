@@ -15,6 +15,11 @@ from electrical_asset import ElectricalAsset
 import dataset as ds
 
 
+# ------- Parameter setup ------- #
+seed = 42
+tf.random.set_seed(seed)
+np.random.seed(seed)
+
 """
     Simulator parameters
 """
