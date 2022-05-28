@@ -357,7 +357,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
 
         if con:
             print("Saving...")
-            save_community_results(con, is_testing, setting, day, community, cost.numpy())
+            save_community_results(con, is_testing, setting, int(day), community, cost.numpy())
 
     if analyse:
         cost = tf.reduce_sum(cost, axis=0)
