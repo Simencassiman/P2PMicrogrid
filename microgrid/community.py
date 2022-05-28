@@ -14,8 +14,9 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 
 # Local Modules
-from environment import env
+import config as cf
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
+from environment import env
 from agent import Agent, ActingAgent, GridAgent, RuleAgent, QAgent
 from production import Prosumer, PV
 from storage import NoStorage
@@ -305,7 +306,7 @@ def main(con: sqlite3.Connection, load_agent: bool = False, analyse: bool = True
 
 
 def save_community_results(con: sqlite3.Connection, is_testing: bool,
-                           setting: str, days: List[int],
+                           setting: str, day: int,
                            community: CommunityMicrogrid, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = [list(map(lambda l: float(l[0]), agent._load)) for agent in community.agents]
@@ -313,6 +314,7 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
     temperatures = [agent.heating.get_history() for agent in community.agents]
     heatpump = [agent.heating._power_history for agent in community.agents]
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
+    days = [day] * len(time)
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
         if is_testing:
@@ -321,48 +323,59 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
             db.log_validation_results(con, setting, i, days, time, *data, implementation)
 
 
-def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False) -> None:
-
+def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False,
+                 analyse: bool = True) -> None:
+    # Set up community
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
+    for i, agent in enumerate(community.agents):
+        agent.actor.set_qtable(np.load(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy'))
 
+    # Get appropriate datasets
     env_df, agent_dfs = ds.get_test_data() if is_testing else ds.get_validation_data()
-    days = env_df['day'].tolist()
+    days = np.unique(env_df['day'])
+    day_indices = {day: env_df['day'] == day for day in days}
     env_df.drop(axis=1, labels='day', inplace=True)
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
 
-    env.setup(ds.dataframe_to_dataset(env_df))
-    for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
-                                             (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
-                                           (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
-        agent.set_profiles(agent_load, agent_pv)
-        agent.actor.set_qtable(np.load(f'../models_{implementation}/{re.sub("-", "_", setting)}_{i}.npy'))
+    # Run from fresh start for each day (don't propagate bad decisions)
+    for day in days:
+        print(f'Running day {day}')
+        env.setup(ds.dataframe_to_dataset(env_df[day_indices[day]]))
+        community.reset()
 
-    print("Running...")
-    power, cost = community.run()
+        for i, agent in enumerate(community.agents):
+            agent_load = ds.dataframe_to_dataset(agent_dfs[i].loc[day_indices[day], 'load'] *
+                                                 (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+            agent_pv = ds.dataframe_to_dataset(agent_dfs[i].loc[day_indices[day], 'pv'] *
+                                               (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
+            agent.set_profiles(agent_load, agent_pv)
 
-    if con:
-        print("Saving...")
-        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+        print("Running...")
+        power, cost = community.run()
 
-    cost = tf.reduce_sum(cost, axis=0)
+        if con:
+            print("Saving...")
+            save_community_results(con, is_testing, setting, day, community, cost.numpy())
 
-    print("Analysing...")
-    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+    if analyse:
+        cost = tf.reduce_sum(cost, axis=0)
+
+        print("Analysing...")
+        analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episodes = 151
-max_episodes = 1000
-min_episodes_criterion = 50
-save_episodes = 50
-nr_agents = 2
-rounds = 1
-homogeneous = False
+# Get community and training params from setup
+starting_episodes = cf.starting_episodes
+max_episodes = cf.max_episodes
+min_episodes_criterion = cf.min_episodes_criterion
+save_episodes = cf.save_episodes
+nr_agents = cf.nr_agents
+rounds = cf.rounds
+homogeneous = cf.homogeneous
+implementation = cf.implementation
 setting = f'{nr_agents}-multi-agent-no-com-{"homo" if homogeneous else "hetero"}'
-implementation = 'tabular'
 
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -375,7 +388,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, load_agent=True, analyse=True)
-        load_and_run(db_connection, is_testing=True)
+        load_and_run(db_connection, is_testing=True, analyse=False)
     finally:
         if db_connection:
             db_connection.close()
