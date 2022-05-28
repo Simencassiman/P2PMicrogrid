@@ -18,8 +18,9 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 
 # Local Modules
-from environment import env
+import config as cf
 from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
+from environment import env
 from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent, DQNAgent
 from production import Prosumer, PV
 from storage import NoStorage
@@ -417,15 +418,15 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
         analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episodes = 51
-max_episodes = 1000
-min_episodes_criterion = 50
-save_episodes = 50
-nr_agents = 3
-rounds = 3
-homogeneous = False
+starting_episodes = cf.starting_episodes
+max_episodes = cf.max_episodes
+min_episodes_criterion = cf.min_episodes_criterion
+save_episodes = cf.save_episodes
+nr_agents = cf.nr_agents
+rounds = cf.rounds
+homogeneous = cf.homogeneous
+implementation = cf.implementation
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
-implementation = 'tabular'
 
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
