@@ -433,7 +433,7 @@ def save_times(train_time: Optional[float] = None, run_time: Optional[float] = N
 
 
 def save_community_results(con: sqlite3.Connection, is_testing: bool,
-                           setting: str, days: List[int],
+                           setting: str, day: int,
                            community: SingleAgentCommunity, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = list(map(lambda l: float(l[0]), community.agent._load))
@@ -441,6 +441,7 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
     temperatures = community.agent.heating.get_history()
     heatpump = community.agent.heating._power_history
     costs = cost[:, 0].tolist()
+    days = [day] * len(time)
 
     if is_testing:
         db.log_test_results(con, setting, 0, days, time, loads, pvs, temperatures, heatpump, costs, implementation)
@@ -449,37 +450,48 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
                                   costs, implementation)
 
 
-def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False) -> None:
+def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False,
+                 analyse: bool = True) -> None:
 
     print("Creating community...")
-    # community = get_rule_based_community(nr_agents)
-    # community = get_rl_based_community(nr_agents)
-    community = get_baseline_community()
+    if implementation == 'rule-based':
+        community = get_rule_based_community(nr_agents)
+    elif implementation == 'semi-intelligent':
+        community = get_baseline_community()
+    elif implementation == 'tabular':
+        community = get_rl_based_community(nr_agents)
+        community.agent.load_from_file(setting, implementation)
+    else:
+        raise RuntimeError(f"Unknown impplementation: {implementation}")
 
     env_df, agent_df = ds.get_test_data() if is_testing else ds.get_validation_data()
-    days = env_df['day'].tolist()
+    days = np.unique(env_df['day'])
+    day_indices = {day: env_df['day'] == day for day in days}
     env_df.drop(axis=1, labels='day', inplace=True)
-    env.setup(ds.dataframe_to_dataset(env_df))
-    for agent in community.agents:
-        agent_load = ds.dataframe_to_dataset(agent_df['l0'] * 0.7 * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_df['pv'] * 4 * 1e3)
-        agent.set_profiles(agent_load, agent_pv)
-        # agent.load_from_file(setting, implementation)
 
-    print("Running...")
-    time_start_run = time.time()
-    power, cost = community.run()
-    time_end_run = time.time()
+    # Run from fresh start for each day (don't propagate bad decisions)
+    for day in days:
+        print(f'Running day {day}')
+        env.setup(ds.dataframe_to_dataset(env_df[day_indices[day]]))
+        community.reset()
 
-    if con:
-        print("Saving...")
-        save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+        for agent in community.agents:
+            agent_load = ds.dataframe_to_dataset(agent_df.loc[day_indices[day], 'l0'] * 0.7 * 1e3)
+            agent_pv = ds.dataframe_to_dataset(agent_df.loc[day_indices[day], 'pv'] * 4 * 1e3)
+            agent.set_profiles(agent_load, agent_pv)
 
-    cost = tf.math.reduce_sum(cost, axis=0)
+        print("Running...")
+        power, cost = community.run()
 
-    print("Analysing...")
-    analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
+        if con:
+            print("Saving...")
+            save_community_results(con, is_testing, setting, day, community, cost.numpy())
+
+    if analyse:
+        cost = tf.math.reduce_sum(cost, axis=0)
+
+        print("Analysing...")
+        analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
 starting_episode = 0
@@ -488,7 +500,7 @@ min_episodes_criterion = 50
 save_episodes = 50
 nr_agents = 1
 setting = 'single-agent'
-implementation = 'semi-intelligent'
+implementation = 'tabular'
 
 episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
 episodes_error: collections.deque = collections.deque(maxlen=min_episodes_criterion)
@@ -500,7 +512,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, analyse=True)
-        load_and_run(db_connection, is_testing=True)
+        load_and_run(db_connection, is_testing=True, analyse=False)
     finally:
         if db_connection:
             db_connection.close()
