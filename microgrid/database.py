@@ -335,8 +335,8 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT *  
-                FROM validation_results
+                SELECT *     
+                FROM test_results
             """
 
             df = pd.read_sql_query(query, conn)

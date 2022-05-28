@@ -1248,11 +1248,11 @@ def statistical_tests() -> None:
 
 save_figures = False
 if __name__ == "__main__":
-    statistical_tests()
+    # statistical_tests()
 
-    # show_test_profiles(save_figs=save_figures)
-    # show_prices(save_fig=save_figures)
-    # plot_tabular_comparison(save_figs=save_figures)
+    show_test_profiles(save_figs=save_figures)
+    show_prices(save_fig=save_figures)
+    plot_tabular_comparison(save_figs=save_figures)
     # compare_decisions_artificial(save_fig=save_figures)
     # compare_decisions_rounds(save_fig=save_figures)
     # compare_q_values()
