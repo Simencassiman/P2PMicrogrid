@@ -108,8 +108,8 @@ class HPHeating(Heating):
         self._power_history = []
 
         self._temperature_setpoint = temperature_setpoint
-        self._t_building_mass = tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
-        self._t_indoor = tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
+        self._t_building_mass = tf.convert_to_tensor([temperature_setpoint]) #tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
+        self._t_indoor = tf.convert_to_tensor([temperature_setpoint]) #tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
 
     @property
     def lower_bound(self) -> float:
@@ -154,8 +154,8 @@ class HPHeating(Heating):
         self._time = 0
         self._history = []
         self._power_history = []
-        self._t_indoor = tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
-        self._t_building_mass = tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
+        self._t_indoor = tf.convert_to_tensor([self._temperature_setpoint]) #tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
+        self._t_building_mass = tf.convert_to_tensor([self._temperature_setpoint]) #tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
 
     def get_history(self) -> List[float]:
         return self._history

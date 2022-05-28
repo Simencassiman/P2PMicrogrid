@@ -247,6 +247,7 @@ class CommunityMicrogrid:
             agent.reset()
 
         self.grid.reset()
+        self.decisions = np.zeros((len(env), self._rounds + 1, len(self.agents)))
 
 
 def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
@@ -343,7 +344,7 @@ def save_times(train_time: Optional[float] = None, run_time: Optional[float] = N
 
 
 def save_community_results(con: sqlite3.Connection, is_testing: bool,
-                           setting: str, days: List[int],
+                           setting: str, day: int,
                            community: CommunityMicrogrid, cost: np.ndarray) -> None:
     time = [float(state[0]) for state, _ in env.data]
     loads = [list(map(lambda l: float(l[0]), agent._load)) for agent in community.agents]
@@ -351,6 +352,7 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
     temperatures = [agent.heating.get_history() for agent in community.agents]
     heatpump = [agent.heating._power_history for agent in community.agents]
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
+    days = [day] * len(time)
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
         if is_testing:
@@ -366,42 +368,47 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
 
 def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = False, analyse: bool = True) -> None:
 
+    # Set up community
     print("Creating community...")
     community = get_rl_based_community(nr_agents, homogeneous=homogeneous)
+    for agent in community.agents:
+        agent.load_from_file(setting, implementation)
 
+    # Get appropriate datasets
     env_df, agent_dfs = ds.get_test_data() if is_testing else ds.get_validation_data()
-    days = env_df['day'].tolist()
+    days = np.unique(env_df['day'])
+    day_indices = {day: env_df['day'] == day for day in days}
     env_df.drop(axis=1, labels='day', inplace=True)
     if homogeneous:
         agent_dfs = [agent_dfs[0]] * nr_agents
 
-    env.setup(ds.dataframe_to_dataset(env_df))
-    community.decisions = np.zeros((len(env), rounds + 1, len(community.agents)))
+    # Run from fresh start for each day (don't propagate bad decisions)
+    for day in days:
+        print(f'Running day {day}')
+        env.setup(ds.dataframe_to_dataset(env_df[day_indices[day]]))
+        community.reset()
 
-    for i, agent in enumerate(community.agents):
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] *
-                                             (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] *
-                                           (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
-        agent.set_profiles(agent_load, agent_pv)
-        agent.load_from_file(setting, implementation)
+        for i, agent in enumerate(community.agents):
+            agent_load = ds.dataframe_to_dataset(agent_dfs[i].loc[day_indices[day], 'load'] *
+                                                 (0.7e3 if homogeneous else np.random.normal(0.7, 0.2, 1) * 1e3))
+            agent_pv = ds.dataframe_to_dataset(agent_dfs[i].loc[day_indices[day], 'pv'] *
+                                               (4e3 if homogeneous else np.random.normal(4, 0.2, 1) * 1e3))
+            agent.set_profiles(agent_load, agent_pv)
 
-    print("Running...")
-    time_start_run = time.time()
-    power, cost = community.run()
-    time_end_run = time.time()
+        print("Running...")
+        power, cost = community.run()
 
-    totals = np.stack(list(map(lambda a: np.array([sum(map(lambda l: float(l[0]), (l for l in a._load))),
-                                                   sum(a.pv.get_history())]),
-                               community.agents)))
-    print(f'Number of agents: {nr_agents}')
-    print(f'Ratio: {(totals[:, 0] / totals[:, 1]).mean()}')
-    print('-' * 10)
+        totals = np.stack(list(map(lambda a: np.array([sum(map(lambda l: float(l[0]), (l for l in a._load))),
+                                                       sum(a.pv.get_history())]),
+                                   community.agents)))
+        print(f'Number of agents: {nr_agents}')
+        print(f'Ratio: {(totals[:, 0] / totals[:, 1]).mean()}')
 
-    if con:
-        print("Saving...")
-        # save_times(run_time=time_end_run - time_start_run)
-        save_community_results(con, is_testing, setting, days, community, cost.numpy())
+        if con:
+            print("Saving...")
+            save_community_results(con, is_testing, setting, day, community, cost.numpy())
+
+        print('-' * 10)
 
     cost = tf.math.reduce_sum(cost, axis=0)
 
@@ -410,12 +417,12 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
         analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episodes = 0
+starting_episodes = 51
 max_episodes = 1000
 min_episodes_criterion = 50
 save_episodes = 50
-nr_agents = 2
-rounds = 1
+nr_agents = 3
+rounds = 3
 homogeneous = False
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
 implementation = 'tabular'
@@ -430,7 +437,7 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
-        # main(db_connection, analyse=True)
+        # main(db_connection, load_agents=True, analyse=True)
         load_and_run(db_connection, is_testing=True, analyse=False)
     finally:
         if db_connection:

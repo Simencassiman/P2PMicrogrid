@@ -335,9 +335,8 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT * 
-                FROM test_results
-                WHERE setting LIKE '%pv%'
+                SELECT *  
+                FROM validation_results
             """
 
             df = pd.read_sql_query(query, conn)

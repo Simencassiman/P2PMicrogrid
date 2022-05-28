@@ -1,6 +1,5 @@
 # Python Libraries
 import re
-import traceback
 from typing import List
 import json
 from datetime import datetime
@@ -19,19 +18,32 @@ from matplotlib.ticker import MultipleLocator
 import config as cf
 from agent import ActingAgent
 import database as db
+import dataset as ds
 
 
 # Config
 np.random.seed(42)
 
-primary_color = '#000'      # '#004079ff'
-secondary_color = '#ccc'    # '#51bcebff'
-# tertiary_color = '#eee'     # '#1d8dafff'
+# Text document settings
+primary_color = '#000'
+secondary_color = '#ccc'
 neutral_color = '#777'
-base_color = '#000'         # '#2f4d5dff'
+base_color = '#000'
 
-title_fontsize = 16
-axis_label_fontsize = 12
+title_fontsize = 9
+axis_label_fontsize = 8
+axis_ticks_fontsize = 6
+
+# Poster settings
+# secondary_color = '#51bcebff'
+# tertiary_color = '#1d8dafff'
+# neutral_color = '#777'
+# base_color = '#2f4d5dff'
+# title_fontsize = 16
+# axis_label_fontsize = 12
+# primary_color = '#004079ff'
+# Figure sizes should approximately be doubled
+
 figure_format = 'eps'
 
 
@@ -98,6 +110,77 @@ def expand_irradiation() -> None:
         ir = np.interp(tt, t, avg).tolist()
 
         json.dump({'day': tt, 'irradiance': ir}, out)
+
+
+def show_test_profiles(save_figs: bool = False) -> None:
+    env_df, agent_dfs = ds.get_test_data()
+
+    time = np.arange(96)
+    df = pd.concat([env_df, agent_dfs[0]], axis=1).loc[env_df['day'] == 8, :]
+
+    # Profiles plot
+    fig, ax = plt.subplots(figsize=(3, 2))
+    fig.suptitle("Example of normalized load and PV", fontsize=title_fontsize)
+    fig.subplots_adjust(bottom=0.2, left=0.18)
+
+    ax.plot(time, df['load'], 'k-')
+    ax.plot(time, df['pv'], 'k:')
+
+    ax.set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"], fontsize=axis_ticks_fontsize)
+    ax.set_xlabel("Time", fontsize=axis_label_fontsize)
+    ax.set_ylabel("Power [-]", fontsize=axis_label_fontsize)
+    ax.set_yticks([0.0, 0.5, 1.0], [0.0, 0.5, 1.0], fontsize=axis_ticks_fontsize)
+    ax.legend(['Load', 'PV'], labelcolor=base_color, fontsize=axis_label_fontsize,
+              bbox_to_anchor=(0., .2), loc="lower left")
+
+    if save_figs:
+        fig.savefig(f'{cf.FIGURES_PATH}/example_profiles.{figure_format}', format=figure_format)
+
+    # Temperature plot
+    fig, ax = plt.subplots(figsize=(3, 2))
+    fig.suptitle("Example of outdoor temperature evolution", fontsize=title_fontsize)
+    fig.subplots_adjust(bottom=0.2, left=0.15)
+
+    ax.plot(time, df['temperature'], 'k-')
+
+    ax.set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"], fontsize=axis_ticks_fontsize)
+    ax.set_xlabel("Time", fontsize=axis_label_fontsize)
+    ax.set_yticks([6, 10, 14, 18], [6, 10, 14, 18], fontsize=axis_ticks_fontsize)
+    ax.set_ylabel("Temperature [°C]", fontsize=axis_label_fontsize)
+
+    if save_figs:
+        fig.savefig(f'{cf.FIGURES_PATH}/example_outdoor_temperature.{figure_format}', format=figure_format)
+
+
+def show_prices(save_fig: bool = False) -> None:
+    time = np.arange(96)
+    grid_price = (
+            (cf.GRID_COST_AVG
+             + cf.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+             ) / cf.CENTS_PER_EURO  # from c€ to €
+    )
+    injection_price = np.zeros(grid_price.shape)
+    injection_price[:] = grid_price.min()[None]
+    p2p_price = (grid_price + injection_price) / 2
+
+    fig, ax = plt.subplots(figsize=(4.5, 1.5))
+    fig.suptitle("Electricity price tariffs", fontsize=title_fontsize)
+    fig.subplots_adjust(bottom=0.26, left=0.15, right=0.77)
+
+    ax.plot(time, grid_price, color=primary_color)
+    ax.plot(time, injection_price, color=secondary_color)
+    ax.plot(time, p2p_price, '--', color=primary_color)
+
+    ax.set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"], fontsize=axis_ticks_fontsize)
+    ax.set_xlabel("Time", fontsize=axis_label_fontsize)
+    ax.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
+    ax.set_ylabel("Price [€/kWh]", color=base_color, fontsize=axis_label_fontsize)
+    ax.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+              bbox_to_anchor=(1., .2), loc="lower left")
+
+    if save_fig:
+        fig.savefig(f'{cf.FIGURES_PATH}/example_prices.{figure_format}', format=figure_format)
 
 
 def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
@@ -231,11 +314,57 @@ def get_profiles_type(setting: str) -> str:
 def get_setting_type(setting: str) -> str:
     return re.match(r'([0-9]-){0,1}([a-z-]+)-[0-9\-a-z]+$', setting).groups()[1]
 
+
 def get_rounds(setting: str) -> str:
     return re.match(r'([0-9]-){0,1}([a-z-]+)-rounds-([0-9])-[a-z]+$', setting).groups()[2]
 
 
-def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
+def make_homogeneous_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
+    settings = ['2-multi-agent-com-rounds-1-homo', '2-multi-agent-no-com-homo', 'single-agent']
+    df = df[df['setting'].isin(settings)]
+    df_baselines = df.loc[df['implementation'].isin(['rule-based', 'semi-intelligent']),
+                          ['implementation', 'day', 'cost']]\
+        .groupby(['implementation', 'day']).sum().groupby('implementation').mean()
+    df = df[df['implementation'].isin(['tabular'])]
+
+    costs = df[['setting', 'agent', 'day', 'cost']].groupby(['setting', 'agent', 'day']).sum().groupby('setting').mean()
+    costs['profiles'] = list(map(lambda s: get_profiles_type(s), costs.index.tolist()))
+    costs['setting'] = list(map(lambda s: get_setting_type(s), costs.index.tolist()))
+    costs = costs.pivot(index=['setting'], columns=['profiles'], values=['cost'])
+
+    x = np.arange(len(costs.index))  # the label locations
+
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+
+    rects = ax.bar(x, costs.loc[:, ('cost', 'homogeneous')], width=0.5, label='Homogeneous', color=secondary_color)
+    ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
+    ax.text(1.3, 1.19, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.48, 1.85, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_title('Average daily cost paid by an agent', color=base_color, fontsize=title_fontsize, loc='right')
+    ax.set_ylabel('Cost [€]', color=base_color, fontsize=axis_label_fontsize)
+    ax.set_xticks(x, ['com', 'no-com', 'single'], fontsize=axis_label_fontsize)
+    ax.set_ylim([0, 2])
+    ax.set_yticks([0., .5, 1., 1.5, 2.], [0.0, 0.5, 1.0, 1.5, 2.0], fontsize=axis_ticks_fontsize)
+    ax.bar_label(rects, labels=[f'{x:,.2f}' for x in rects.datavalues], padding=2, color=base_color,
+                 fontsize=axis_ticks_fontsize)
+
+    # Additional coloring
+    ax.spines['bottom'].set_color(base_color)
+    ax.spines['top'].set_color(base_color)
+    ax.spines['right'].set_color(base_color)
+    ax.spines['left'].set_color(base_color)
+    ax.tick_params(axis='x', colors=base_color)
+    ax.tick_params(axis='y', colors=base_color)
+
+    fig.tight_layout()
+
+    if save_fig:
+        plt.savefig(f'{cf.FIGURES_PATH}/costs_plot_homogeneous.{figure_format}', format=figure_format)
+
+
+def make_heterogeneous_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-1-homo',
                 '2-multi-agent-no-com-hetero', '2-multi-agent-no-com-homo',
                 'single-agent']
@@ -253,19 +382,25 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     x = np.arange(len(costs.index))  # the label locations
     width = 0.35  # the width of the bars
 
-    fig, ax = plt.subplots(figsize=(6.5, 5))
+    fig, ax = plt.subplots(figsize=(3.5, 3.))
+    fig.subplots_adjust(bottom=0.25)
+
     rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color=primary_color)
     rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
     ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
-    ax.text(1.38, 1.3, 'Semi-intelligent', color=base_color)
-    ax.text(1.5, 1.73, 'Rule-based', color=base_color)
+    ax.text(1.4, 1.19, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.48, 1.85, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title('Average daily cost paid by an agent', color=base_color, fontsize=title_fontsize)
     ax.set_ylabel('Cost [€]', color=base_color, fontsize=axis_label_fontsize)
-    ax.set_xticks(x, costs.index, fontsize=axis_label_fontsize)
-    ax.bar_label(rects1, labels=[f'{x:,.2f}' for x in rects1.datavalues], padding=3, color=base_color)
-    ax.bar_label(rects2, labels=[f'{x:,.2f}' for x in rects2.datavalues], padding=3, color=base_color)
+    ax.set_xticks(x, ['com', 'no-com', 'single'], fontsize=axis_label_fontsize)
+    ax.set_ylim([0, 2])
+    ax.set_yticks([0., .5, 1., 1.5, 2.], [0.0, 0.5, 1.0, 1.5, 2.0], fontsize=axis_ticks_fontsize)
+    ax.bar_label(rects1, labels=[f'{x:,.2f}' for x in rects1.datavalues], padding=2, color=base_color,
+                 fontsize=axis_ticks_fontsize)
+    ax.bar_label(rects2, labels=[f'{x:,.2f}' for x in rects2.datavalues], padding=2, color=base_color,
+                 fontsize=axis_ticks_fontsize)
 
     # Additional coloring
     ax.spines['bottom'].set_color(base_color)
@@ -274,17 +409,16 @@ def make_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     ax.spines['left'].set_color(base_color)
     ax.tick_params(axis='x', colors=base_color)
     ax.tick_params(axis='y', colors=base_color)
-    ax.legend(labelcolor=base_color, loc='upper center')
-
-    fig.tight_layout()
+    ax.legend(labelcolor=base_color, bbox_to_anchor=(0.5, -.14), loc='upper center', fontsize=axis_label_fontsize)
 
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/costs_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/costs_plot_heterogeneous.{figure_format}', format=figure_format)
 
 
-def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
-    timeslot_info = df[(df['setting'] == '2-multi-agent-com-rounds-1-hetero') & (df['day'] == 8)] \
-        .pivot(index=['time'], columns=['agent'], values=['load', 'pv', 'temperature', 'heatpump'])
+def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = False) -> None:
+
+    timeslot_info = df[(df['setting'] == 'single-agent') & (df['implementation'] == baseline) & (df['day'] == 8)] \
+        .pivot(index=['time'], columns=['agent'], values=['load', 'pv', 'temperature', 'heatpump', 'cost'])
 
     time = np.arange(96)
     grid_price = (
@@ -297,44 +431,53 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
     injection_price[:] = grid_price.min()[None]
     p2p_price = (grid_price + injection_price) / 2
 
-    fig, ax = plt.subplots(4, 1, figsize=(10, 7), sharex=True)
-    fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
+    fig, ax = plt.subplots(4, 1, figsize=(5.5, 3.5), sharex=True)
+    fig.suptitle(f"Agent's state and decisions throughout the day",
+                 color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(left=0.1, right=0.72, hspace=0.4)
 
     # Powers
     net_power = timeslot_info.loc[:, ('load', 0)] \
                 - timeslot_info.loc[:, ('pv', 0)] \
                 + timeslot_info.loc[:, ('heatpump', 0)]
-    ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=primary_color)
-    ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], color=secondary_color)
-    ax[0].plot(time, net_power, '--', color=primary_color)
-    ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+    ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=secondary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
+    ax[0].plot(time, net_power, color=primary_color)
+    ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-    ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color,
-                 bbox_to_anchor=(1.04, 1), loc="upper left")
+    ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                 bbox_to_anchor=(1.02, 1.02), loc="upper left")
 
     # Prices
-    ax[1].plot(time, grid_price, color=primary_color)
-    ax[1].plot(time, injection_price, color=secondary_color)
-    ax[1].plot(time, p2p_price, '--', color=primary_color)
-    ax[1].set_yticks([0.07, 0.12, 0.17])
-    ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-    ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color,
-                 bbox_to_anchor=(1.04, 1), loc="upper left")
+    ax12 = ax[1].twinx()
+    ax12.plot(time, grid_price, color=secondary_color)
+    ax12.plot(time, injection_price, ':', color=secondary_color)
+    ax12.plot(time, p2p_price, '--', color=secondary_color)
+    ax[1].plot(time, timeslot_info.loc[:, ('cost', 0)], color=primary_color)
+    ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
+    ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
+    ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
+    ax[1].set_zorder(1)
+    ax[1].set_frame_on(False)
+    ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
+    ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                bbox_to_anchor=(1.15, 1), loc="upper left")
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
-    ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+    ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
     ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
-    ax[2].xaxis.set_minor_locator(MultipleLocator(1))
 
     # Temperature
     ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
-    ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
-    ax[3].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
-    ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
     ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
-
-    fig.tight_layout()
+    ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
+    ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
+    ax[2].xaxis.set_minor_locator(MultipleLocator(1))
+    ax[3].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
+                     [re.sub(' ', '0', f'{i/4:2.0f}:00' if i % 16 == 0 else '') for i in range(96 + 1) if i % 4 == 0],
+                     fontsize=axis_ticks_fontsize)
+    ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
     for i in range(len(ax)):
@@ -346,15 +489,228 @@ def make_day_plot(df: pd.DataFrame, save_fig: bool = False) -> None:
         ax[i].tick_params(axis='y', colors=base_color)
 
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/day_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/day_plot_{baseline}.{figure_format}', format=figure_format)
 
 
-def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
+def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = False) -> None:
+    setting = 'homo' if homogeneous else 'hetero'
+
+    timeslot_info = df[(df['setting'] == f'2-multi-agent-com-rounds-1-{setting}') & (df['day'] == 8)] \
+        .pivot(index=['time'], columns=['agent'], values=['load', 'pv', 'temperature', 'heatpump', 'cost'])
+
+    time = np.arange(96)
+    grid_price = (
+            (cf.GRID_COST_AVG
+             + cf.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+             ) / cf.CENTS_PER_EURO  # from c€ to €
+    )
+    injection_price = np.zeros(grid_price.shape)
+    injection_price[:] = grid_price.min()[None]
+    p2p_price = (grid_price + injection_price) / 2
+
+    fig, ax = plt.subplots(4, 1, figsize=(5.5, 3.5), sharex=True)
+    fig.suptitle(f"Agent's state and decisions throughout the day ({setting}geneous)",
+                 color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(left=0.1, right=0.72, hspace=0.4)
+
+    # Powers
+    net_power = timeslot_info.loc[:, ('load', 0)] \
+                - timeslot_info.loc[:, ('pv', 0)] \
+                + timeslot_info.loc[:, ('heatpump', 0)]
+    ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=secondary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
+    ax[0].plot(time, net_power, color=primary_color)
+    ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
+    ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
+    ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                 bbox_to_anchor=(1.02, 1.02), loc="upper left")
+
+    # Prices
+    ax12 = ax[1].twinx()
+    ax[1].plot(time, timeslot_info.loc[:, ('cost', 0)], color=primary_color)
+    ax12.plot(time, grid_price, color=secondary_color)
+    ax12.plot(time, injection_price, ':', color=secondary_color)
+    ax12.plot(time, p2p_price, '--', color=secondary_color)
+    ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
+    ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
+    ax[1].set_zorder(1)
+    ax[1].set_frame_on(False)
+    ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
+    ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
+    ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                bbox_to_anchor=(1.15, 1), loc="upper left")
+
+    # Heat pump
+    ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
+    ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
+    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+
+    # Temperature
+    ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
+    ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
+    ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
+    ax[3].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
+                     [re.sub(' ', '0', f'{i / 4:2.0f}:00' if i % 16 == 0 else '') for i in range(96 + 1) if i % 4 == 0],
+                     fontsize=axis_ticks_fontsize)
+    ax[2].xaxis.set_minor_locator(MultipleLocator(1))
+    ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+    ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+
+    # Additional coloring
+    for i in range(len(ax)):
+        ax[i].spines['bottom'].set_color(base_color)
+        ax[i].spines['top'].set_color(base_color)
+        ax[i].spines['right'].set_color(base_color)
+        ax[i].spines['left'].set_color(base_color)
+        ax[i].tick_params(axis='x', colors=base_color)
+        ax[i].tick_params(axis='y', colors=base_color)
+
+    if save_fig:
+        plt.savefig(f'{cf.FIGURES_PATH}/day_plot_{setting}.{figure_format}', format=figure_format)
+
+
+def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = False) -> None:
+    setting = 'homo' if homogeneous else 'hetero'
+
+    df = df[(df['setting'].isin([f'2-multi-agent-com-rounds-1-{setting}', f'2-multi-agent-no-com-{setting}']))
+            & (df['day'] == 8)]
+    timeslot_info = df.pivot(index=['time'], columns=['setting', 'agent'],
+                             values=['load', 'pv', 'temperature', 'heatpump'])
+    time = np.arange(96)
+    grid_price = (
+            (cf.GRID_COST_AVG
+             + cf.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
+             ) / cf.CENTS_PER_EURO  # from c€ to €
+    )
+    injection_price = np.zeros(grid_price.shape)
+    injection_price[:] = grid_price.min()[None]
+    p2p_price = (grid_price + injection_price) / 2
+
+    # Make plot
+    fig, ax = plt.subplots(6, 1, figsize=(5.5, 5), sharex=True)
+    fig.suptitle(f"Agent's state and decisions throughout the day ({setting}geneous)",
+                 color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(left=0.1, right=0.7, hspace=0.4)
+
+    # Powers
+    ax[0].plot(time, timeslot_info.loc[:, ('load', f'2-multi-agent-com-rounds-1-{setting}', 0)],
+               color=primary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('load', f'2-multi-agent-com-rounds-1-{setting}', 1)],
+               color=secondary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('pv', f'2-multi-agent-com-rounds-1-{setting}', 0)], '--',
+               color=primary_color)
+    ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
+    ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
+    ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
+
+    # Prices
+    ax[1].plot(time, grid_price, color=primary_color)
+    ax[1].plot(time, injection_price, color=secondary_color)
+    ax[1].plot(time, p2p_price, '--', color=primary_color)
+    ax[1].set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
+    ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
+    ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                 bbox_to_anchor=(1.02, 0.), loc="lower left")
+
+    # Heat pump
+    width = 0.4
+
+    # agent 0
+    ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 0)],
+              label='Communication', width=width, color=primary_color)
+    ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 0)],
+              label='No communication', width=width, color=secondary_color)
+    ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
+    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+    ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
+
+    # agent 1
+    ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 1)],
+              label='Communication', width=width, color=primary_color)
+    ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 1)],
+              label='No communication', width=width, color=secondary_color)
+    ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
+    ax[3].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+
+    # Temperature
+    # Agent 0
+    ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 0)],
+               color=primary_color)
+    ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 0)],
+               color=secondary_color)
+    ax[4].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
+    ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+    ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
+
+    # Agent 1
+    ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+    ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 1)],
+               color=primary_color)
+    ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 1)],
+               color=secondary_color)
+    ax[5].set_ylabel("  Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
+    ax[5].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
+                     [re.sub(' ', '0', f'{i / 4:2.0f}:00' if i % 16 == 0 else '') for i in range(96 + 1) if i % 4 == 0],
+                     fontsize=axis_ticks_fontsize)
+    ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+    ax[5].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
+    ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+    ax[5].xaxis.set_minor_locator(MultipleLocator(1))
+
+    if save_fig:
+        plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot_{setting}.{figure_format}', format=figure_format)
+
+
+def make_homogeneous_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
     df.loc[df['episode'] == 999, 'episode'] = 1000
     episodes = df.pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(4.5, 3))
     fig.suptitle("Running rewards during training", color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(bottom=0.15, top=0.7)
+
+    ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color=primary_color)
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
+            '--', color=primary_color)
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-rounds-1-homo', 'tabular')],
+            '-.', color=primary_color)
+    ax.legend(['Single agent', '2 agent no-com', '2 agent com'],
+              labelcolor=base_color, fontsize=axis_label_fontsize,
+              bbox_to_anchor=(.3, 1.), loc='lower left')
+    ax.set_xticks([0, 250, 500, 750, 1000], [0, 250, 500, 750, 1000], fontsize=axis_ticks_fontsize)
+    ax.set_xlabel("Episodes", color=base_color, fontsize=axis_label_fontsize)
+    ax.set_yticks([-5000, -10000, -15000, -20000, -25000, -30000], [-5000, -10000, -15000, -20000, -25000, -30000],
+                  fontsize=axis_ticks_fontsize)
+    ax.set_ylabel("Reward", color=base_color, fontsize=axis_label_fontsize)
+
+    # Additional coloring
+    ax.spines['bottom'].set_color(base_color)
+    ax.spines['top'].set_color(base_color)
+    ax.spines['right'].set_color(base_color)
+    ax.spines['left'].set_color(base_color)
+    ax.tick_params(axis='x', colors=base_color)
+    ax.tick_params(axis='y', colors=base_color)
+
+    if save_fig:
+        plt.savefig(f'{cf.FIGURES_PATH}/learning_homogeneous.{figure_format}', format=figure_format)
+
+
+def make_heterogeneous_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
+    df.loc[df['episode'] == 999, 'episode'] = 1000
+    episodes = df.pivot(index=['episode'], columns=['setting', 'agent'], values=['reward'])
+
+    fig, ax = plt.subplots(figsize=(4.5, 3))
+    fig.suptitle("Running rewards during training", color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(right=0.5)
+
     ax.plot(episodes.index, episodes.loc[:, ('reward', 'single-agent', 'tabular')], '-', color=primary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-no-com-homo', 'tabular')],
             '--', color=primary_color)
@@ -368,8 +724,12 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
             ':', color=primary_color)
     ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
                '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'],
-              labelcolor=base_color)
+              labelcolor=base_color, fontsize=axis_label_fontsize,
+              bbox_to_anchor=(1., .2), loc='lower left')
+    ax.set_xticks([0, 250, 500, 750, 1000], [0, 250, 500, 750, 1000], fontsize=axis_ticks_fontsize)
     ax.set_xlabel("Episodes", color=base_color, fontsize=axis_label_fontsize)
+    ax.set_yticks([-5000, -10000, -15000, -20000, -25000, -30000], [-5000, -10000, -15000, -20000, -25000, -30000],
+                  fontsize=axis_ticks_fontsize)
     ax.set_ylabel("Reward", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
@@ -380,10 +740,8 @@ def make_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
     ax.tick_params(axis='x', colors=base_color)
     ax.tick_params(axis='y', colors=base_color)
 
-    fig.tight_layout()
-
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/learning.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/learning_heterogeneous.{figure_format}', format=figure_format)
 
 
 def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
@@ -399,13 +757,15 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s).groups()[0]).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(4.5, 5.5))
-    plt.title("Average cost vs. community scale", color=base_color, fontsize=title_fontsize, loc='right')
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    plt.title("Average cost vs. community scale", color=base_color, fontsize=title_fontsize, loc='center')
+    fig.subplots_adjust(left=0.16, bottom=.16)
 
     ax.errorbar(costs['agents'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
-    ax.set_xticks([2, 3, 4, 5], [2, 3, 4, 5])
+    ax.set_xticks([2, 3, 4, 5], [2, 3, 4, 5], fontsize=axis_ticks_fontsize)
     ax.set_xlabel("Number of agents", color=base_color, fontsize=axis_label_fontsize)
     ax.set_ylim(0, 2)
+    ax.set_yticks([0, .5, 1, 1.5, 2], [0.0, 0.5, 1.0, 1.5, 2.0], fontsize=axis_ticks_fontsize)
     ax.set_ylabel("Cost [€]", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
@@ -416,10 +776,8 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     ax.tick_params(axis='x', colors=base_color)
     ax.tick_params(axis='y', colors=base_color)
 
-    fig.tight_layout()
-
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/scaling_plot.{figure_format}', format=figure_format)
+        plt.savefig(f'{cf.FIGURES_PATH}/scale_effect_plot.{figure_format}', format=figure_format)
 
 
 def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
@@ -435,13 +793,16 @@ def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['rounds'] = costs.index.map(lambda s: get_rounds(s)).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(5.5, 5.5))
+    fig, ax = plt.subplots(figsize=(3, 3))
     plt.title("Average cost vs. number of decision rounds", color=base_color, fontsize=title_fontsize)
+    fig.subplots_adjust(left=0.2, right=.8)
 
     ax.errorbar(costs['rounds'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
+    ax.set_xlim(.75, 3.25)
     ax.set_xlabel("Number of rounds", color=base_color, fontsize=axis_label_fontsize)
-    ax.set_xticks([1, 2, 3])
-    ax.set_ylim(1.0, 1.75)
+    ax.set_xticks([1, 2, 3], [1, 2, 3], fontsize=axis_ticks_fontsize)
+    ax.set_ylim(1.0, 2.0)
+    ax.set_yticks([0, .5, 1.0, 1.5, 2], [0.0, 0.5, 1.0, 1.5, 2.0], fontsize=axis_ticks_fontsize)
     ax.set_ylabel("Cost [€]", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
@@ -452,10 +813,8 @@ def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     ax.tick_params(axis='x', colors=base_color)
     ax.tick_params(axis='y', colors=base_color)
 
-    fig.tight_layout()
-
     if save_fig:
-        plt.savefig(f'{cf.FIGURES_PATH}/rounds_effect_plot.{figure_format}', format=figure_format)
+        fig.savefig(f'{cf.FIGURES_PATH}/rounds_effect_plot.{figure_format}', format=figure_format)
 
 
 def plot_tabular_comparison(save_figs: bool = False) -> None:
@@ -464,15 +823,23 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
 
     try:
         df = db.get_training_progress(con)
-        make_learning_plot(df, save_figs)
+        make_homogeneous_learning_plot(df, save_figs)
+        make_heterogeneous_learning_plot(df, save_figs)
 
         df = db.get_test_results(con)
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
 
-        make_costs_plot(df, save_figs)
-        make_day_plot(df, save_figs)
+        make_homogeneous_costs_plot(df, save_figs)
+        make_heterogeneous_costs_plot(df, save_figs)
+        make_baseline_day_plot(df, 'rule-based', save_fig=save_figs)
+        make_baseline_day_plot(df, 'semi-intelligent', save_fig=save_figs)
+        make_baseline_day_plot(df, 'tabular', save_fig=save_figs)
+        make_day_plot(df, homogeneous=True, save_fig=save_figs)
+        make_day_plot(df, homogeneous=False, save_fig=save_figs)
+        make_decisions_comparison_plot(df, homogeneous=True, save_fig=save_figs)
+        make_decisions_comparison_plot(df, homogeneous=False, save_fig=save_figs)
         make_nr_agent_dependency_plot(df, save_figs)
         make_nr_rounds_dependency_plot(df, save_figs)
 
@@ -481,12 +848,13 @@ def plot_tabular_comparison(save_figs: bool = False) -> None:
             con.close()
 
 
-def compare_decisions(save_fig: bool = False) -> None:
+def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None:
+    setting = 'homo' if homogeneous else 'hetero'
     con = db.get_connection()
 
     try:
         df = db.get_test_results(con)
-        df = df[(df['setting'].isin(['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-no-com-hetero']))
+        df = df[(df['setting'].isin([f'2-multi-agent-com-rounds-1-{setting}', f'2-multi-agent-no-com-{setting}']))
                 & (df['day'] == 8)]
 
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
@@ -506,76 +874,85 @@ def compare_decisions(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(6, 1, figsize=(10, 8), sharex=True)
-        fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
+        fig, ax = plt.subplots(6, 1, figsize=(5.5, 5), sharex=True)
+        fig.suptitle(f"Agent's state and decisions throughout the day ({setting}geneous)",
+                     color=base_color, fontsize=title_fontsize)
+        fig.subplots_adjust(left=0.1, right=0.7, hspace=0.4)
 
         # Powers
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-1-hetero', 0)], color=primary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-1-hetero', 1)], color=secondary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-rounds-1-hetero', 0)], '--', color=primary_color)
-        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+        ax[0].plot(time, timeslot_info.loc[:, ('load', f'2-multi-agent-com-rounds-1-{setting}', 0)],
+                   color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('load', f'2-multi-agent-com-rounds-1-{setting}', 1)],
+                   color=secondary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', f'2-multi-agent-com-rounds-1-{setting}', 0)], '--',
+                   color=primary_color)
+        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 1), loc="upper left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
 
         # Prices
         ax[1].plot(time, grid_price, color=primary_color)
         ax[1].plot(time, injection_price, color=secondary_color)
         ax[1].plot(time, p2p_price, '--', color=primary_color)
-        ax[1].set_yticks([0.07, 0.12, 0.17])
+        ax[1].set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
         ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                     bbox_to_anchor=(1.02, 0.), loc="lower left")
 
         # Heat pump
         width = 0.4
 
         # agent 0
-        ax[2].set_title("agent 0", fontsize=10, loc='right')
-        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-rounds-1-hetero', 0)],
+        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 0)],
                   label='Communication', width=width, color=primary_color)
-        ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-no-com-hetero', 0)],
+        ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 0)],
                   label='No communication', width=width, color=secondary_color)
-        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 0), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
 
         # agent 1
-        ax[3].set_title("agent 1", fontsize=10, loc='right')
-        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-com-rounds-1-hetero', 1)],
+        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 1)],
                   label='Communication', width=width, color=primary_color)
-        ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-multi-agent-no-com-hetero', 1)],
+        ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 1)],
                   label='No communication', width=width, color=secondary_color)
-        ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[3].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
 
         # Temperature
-        ax[4].set_title("agent 0", fontsize=10, loc='right')
-        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-1-hetero', 0)],
+        # Agent 0
+        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 0)],
                    color=primary_color)
-        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-no-com-hetero', 0)],
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 0)],
                    color=secondary_color)
-        ax[4].set_yticks([20, 22])
+        ax[4].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
         ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 0), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
 
-        ax[5].set_title("agent 1", fontsize=10, loc='right')
-        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-1-hetero', 1)],
+        # Agent 1
+        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 1)],
                    color=primary_color)
-        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-no-com-hetero', 1)],
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 1)],
                    color=secondary_color)
-        ax[5].set_ylabel("       Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
-        ax[5].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
+        ax[5].set_ylabel("  Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
+        ax[5].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"],
+                         fontsize=axis_ticks_fontsize)
         ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
-        ax[5].set_yticks([20, 22])
+        ax[5].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
         ax[5].xaxis.set_minor_locator(MultipleLocator(1))
 
-        fig.tight_layout()
+        # fig.tight_layout()
 
         if save_fig:
-            plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot.{figure_format}', format=figure_format)
+            plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot_{setting}.{figure_format}', format=figure_format)
 
     finally:
         if con:
@@ -785,7 +1162,29 @@ def compare_q_values() -> None:
         fig.subplots_adjust(right=0.8)
         cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])
         fig.colorbar(im, cax=cbar_ax)
-    # fig.tight_layout()
+
+
+def statistics_baselines(df: pd.DataFrame) -> None:
+    df = df[df['setting'] == 'single-agent']
+
+    costs = df[['setting', 'implementation', 'day', 'cost']] \
+        .groupby(['setting', 'implementation', 'day']).sum().reset_index()\
+        .pivot(index=['day'], columns=['implementation'], values=['cost'])
+
+    sample_rule_based = np.array(costs.loc[:, ('cost', 'rule-based')])
+    sample_semi_intelligent = np.array(costs.loc[:, ('cost', 'semi-intelligent')])
+    sample_tabular = np.array(costs.loc[:, ('cost', 'tabular')])
+
+    rule_tabular = sample_rule_based - sample_tabular
+    semi_tabular = sample_semi_intelligent - sample_tabular
+    
+    _, p_rule_tabular = stats.ttest_1samp(rule_tabular, 0)
+    _, p_semi_tabular = stats.ttest_1samp(semi_tabular, 0)
+
+    print('Test difference between baseline agents')
+    print(f'Difference rule-based vs tabular: p-value = {p_rule_tabular}')
+    print(f'Difference semi-intelligent vs tabular: p-value = {p_semi_tabular}')
+    print('-' * 50)
 
 
 def statistics_community_scale(df: pd.DataFrame) -> None:
@@ -838,6 +1237,7 @@ def statistical_tests() -> None:
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
 
+        statistics_baselines(df)
         statistics_community_scale(df)
         statistics_nr_rounds(df)
 
@@ -846,14 +1246,15 @@ def statistical_tests() -> None:
             con.close()
 
 
-save_figures = True
+save_figures = False
 if __name__ == "__main__":
-    # statistical_tests()
+    statistical_tests()
 
-    plot_tabular_comparison(save_figs=save_figures)
-    compare_decisions(save_fig=save_figures)
-    compare_decisions_artificial(save_fig=save_figures)
-    compare_decisions_rounds(save_fig=save_figures)
+    # show_test_profiles(save_figs=save_figures)
+    # show_prices(save_fig=save_figures)
+    # plot_tabular_comparison(save_figs=save_figures)
+    # compare_decisions_artificial(save_fig=save_figures)
+    # compare_decisions_rounds(save_fig=save_figures)
     # compare_q_values()
 
-    plt.show()
+    # plt.show()
