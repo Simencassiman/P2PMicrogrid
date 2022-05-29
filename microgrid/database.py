@@ -239,7 +239,8 @@ if __name__ == '__main__':
 
             query = """
                 SELECT *
-                FROM validation_results 
+                FROM test_results 
+                WHERE setting LIKE '%pv-drop-no-com%'
             """
 
             df = pd.read_sql_query(query, conn)
