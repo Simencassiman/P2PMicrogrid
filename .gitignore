@@ -1,6 +1,8 @@
 **/config.py
 .idea
 **/__pycache__
-data
-models_*
+data/*
+plots/*
+figures/*
+models_*/*
 **/*.json
