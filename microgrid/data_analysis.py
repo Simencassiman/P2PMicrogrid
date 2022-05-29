@@ -338,8 +338,8 @@ def make_homogeneous_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> Non
 
     rects = ax.bar(x, costs.loc[:, ('cost', 'homogeneous')], width=0.5, label='Homogeneous', color=secondary_color)
     ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
-    ax.text(1.3, 1.19, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
-    ax.text(1.48, 1.85, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.3, 0.8, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.48, 1.55, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title('Average daily cost paid by an agent', color=base_color, fontsize=title_fontsize, loc='right')
@@ -388,8 +388,8 @@ def make_heterogeneous_costs_plot(df: pd.DataFrame, save_fig: bool = False) -> N
     rects1 = ax.bar(x - width / 2, costs['heterogeneous'], width, label='Heterogeneous', color=primary_color)
     rects2 = ax.bar(x + width / 2, costs['homogeneous'], width, label='Homogeneous', color=secondary_color)
     ax.hlines(y=df_baselines['cost'], xmin=1.5, xmax=2.4, color=neutral_color, linestyle='--')
-    ax.text(1.4, 1.19, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
-    ax.text(1.48, 1.85, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.4, .75, 'Semi-intelligent', color=base_color, fontsize=axis_label_fontsize)
+    ax.text(1.48, 1.55, 'Rule-based', color=base_color, fontsize=axis_label_fontsize)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title('Average daily cost paid by an agent', color=base_color, fontsize=title_fontsize)
@@ -722,8 +722,11 @@ def make_heterogeneous_learning_plot(df: pd.DataFrame, save_fig: bool) -> None:
             '-.', color=secondary_color)
     ax.plot(episodes.index, episodes.loc[:, ('reward', '5-multi-agent-com-rounds-1-hetero', 'tabular')],
             ':', color=primary_color)
+    ax.plot(episodes.index, episodes.loc[:, ('reward', '2-multi-agent-com-rounds-3-hetero', 'tabular')],
+            ':', color=secondary_color)
     ax.legend(['Single agent', '2 agent no-com homogeneous', '2 agent no-com heterogeneous',
-               '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous'],
+               '2 agent com homogeneous', '2 agent com heterogeneous', '5 agent com heterogeneous',
+               '2 agent 3 rounds'],
               labelcolor=base_color, fontsize=axis_label_fontsize,
               bbox_to_anchor=(1., .2), loc='lower left')
     ax.set_xticks([0, 250, 500, 750, 1000], [0, 250, 500, 750, 1000], fontsize=axis_ticks_fontsize)
@@ -757,9 +760,9 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['agents'] = costs.index.map(lambda s: re.match(r'^([0-9])-.*', s).groups()[0]).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(2.5, 3))
+    fig, ax = plt.subplots(figsize=(2.5, 2))
     plt.title("Average cost vs. community scale", color=base_color, fontsize=title_fontsize, loc='center')
-    fig.subplots_adjust(left=0.16, bottom=.16)
+    fig.subplots_adjust(left=0.16, bottom=.18, top=0.8)
 
     ax.errorbar(costs['agents'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
     ax.set_xticks([2, 3, 4, 5], [2, 3, 4, 5], fontsize=axis_ticks_fontsize)
@@ -781,8 +784,8 @@ def make_nr_agent_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
 
 
 def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
-    settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-2-hetero',
-                '2-multi-agent-com-rounds-3-hetero']
+    settings = ['3-multi-agent-com-rounds-1-hetero', '3-multi-agent-com-rounds-2-hetero',
+                '3-multi-agent-com-rounds-3-hetero']
     df = df[df['setting'].isin(settings)]
 
     df = df[['setting', 'agent', 'day', 'cost']]\
@@ -793,16 +796,16 @@ def make_nr_rounds_dependency_plot(df: pd.DataFrame, save_fig: bool) -> None:
     costs['rounds'] = costs.index.map(lambda s: get_rounds(s)).astype(int)
 
     plt.rcParams['axes.titlepad'] = 14  # pad is in points...
-    fig, ax = plt.subplots(figsize=(3, 3))
+    fig, ax = plt.subplots(figsize=(3, 2))
     plt.title("Average cost vs. number of decision rounds", color=base_color, fontsize=title_fontsize)
-    fig.subplots_adjust(left=0.2, right=.8)
+    fig.subplots_adjust(left=0.2, right=.8, bottom=.18, top=0.8)
 
-    ax.errorbar(costs['rounds'], costs['mean'], costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
+    ax.errorbar(costs['rounds'], costs['mean'], yerr=costs['std'], linestyle='none', marker='.', capsize=5, color=base_color)
     ax.set_xlim(.75, 3.25)
     ax.set_xlabel("Number of rounds", color=base_color, fontsize=axis_label_fontsize)
     ax.set_xticks([1, 2, 3], [1, 2, 3], fontsize=axis_ticks_fontsize)
-    ax.set_ylim(1.0, 2.0)
-    ax.set_yticks([0, .5, 1.0, 1.5, 2], [0.0, 0.5, 1.0, 1.5, 2.0], fontsize=axis_ticks_fontsize)
+    ax.set_ylim(1.0, 3)
+    ax.set_yticks([0, .5, 1.0, 1.5, 2, 2.5, 3], [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0], fontsize=axis_ticks_fontsize)
     ax.set_ylabel("Cost [€]", color=base_color, fontsize=axis_label_fontsize)
 
     # Additional coloring
@@ -965,16 +968,17 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
     try:
         df = db.get_rounds_decisions(con)
         df['decision'] *= 1e-3
-        decisions = df[(df['agent'] == 0) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)] \
+        decisions = df[(df['agent'] == 0) & (df['setting'] == '3-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)] \
             .pivot(index=['time'], columns=['round'], values=['decision'])
 
         df = db.get_test_results(con)
-        df = df[(df['agent'] == 0) & (df['setting'] == '2-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)]
+        df = df[(df['setting'] == '3-multi-agent-com-rounds-3-hetero') & (df['day'] == 8)]
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
         df['heatpump'] *= 1e-3
-        timeslot_info = df.pivot(index=['time'], columns=['setting', 'agent'],
-                                 values=['load', 'pv', 'temperature', 'heatpump'])
+
+        timeslot_info = df.pivot(index=['time'], columns=['agent'],
+                                 values=['load', 'pv', 'temperature', 'heatpump', 'cost'])
         time = np.arange(96)
         grid_price = (
                 (cf.GRID_COST_AVG
@@ -987,23 +991,36 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(4, 1, figsize=(10, 7), sharex=True)
+        fig, ax = plt.subplots(4, 1, figsize=(5.5, 3.5), sharex=True)
         fig.suptitle("Agent decisions for each round of the time slot", color=base_color, fontsize=title_fontsize)
+        fig.subplots_adjust(left=0.1, right=0.72, hspace=0.4)
 
         # Powers
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-multi-agent-com-rounds-3-hetero', 0)], color=primary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-multi-agent-com-rounds-3-hetero', 0)], color=secondary_color)
-        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+        net_power = timeslot_info.loc[:, ('load', 0)] \
+                    - timeslot_info.loc[:, ('pv', 0)] \
+                    + timeslot_info.loc[:, ('heatpump', 0)]
+        ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=secondary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
+        ax[0].plot(time, net_power, color=primary_color)
+        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[0].legend(["Base Load", "PV"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                     bbox_to_anchor=(1.02, 1.02), loc="upper left")
 
         # Prices
-        ax[1].plot(time, grid_price, color=primary_color)
-        ax[1].plot(time, injection_price, color=secondary_color)
-        ax[1].plot(time, p2p_price, '--', color=primary_color)
-        ax[1].set_yticks([0.07, 0.12, 0.17])
-        ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax12 = ax[1].twinx()
+        ax[1].plot(time, timeslot_info.loc[:, ('cost', 0)], color=primary_color)
+        ax12.plot(time, grid_price, color=secondary_color)
+        ax12.plot(time, injection_price, ':', color=secondary_color)
+        ax12.plot(time, p2p_price, '--', color=secondary_color)
+        ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
+        ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
+        ax[1].set_zorder(1)
+        ax[1].set_frame_on(False)
+        ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
+        ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
+        ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                    bbox_to_anchor=(1.15, 1.1), loc="upper left")
 
         # Heat pump
         width = 0.2
@@ -1014,24 +1031,24 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[2].bar(x + 0.5 * width, decisions.loc[:, ('decision', 2)], label='Round 2', width=width)
         ax[2].bar(x + 1.5 * width, decisions.loc[:, ('decision', 3)], label='Round 3', width=width)
 
-        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[2].legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax[2].legend(bbox_to_anchor=(1.04, 1.2), loc="upper left", fontsize=axis_label_fontsize)
 
         # Temperature
-        ax[3].plot(time, timeslot_info.loc[:, ('temperature', '2-multi-agent-com-rounds-3-hetero', 0)],
-                   color=primary_color)
+        ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
+        ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
-        ax[3].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
+        ax[3].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
+                         [re.sub(' ', '0', f'{i / 4:2.0f}:00' if i % 16 == 0 else '') for i in range(96 + 1) if
+                          i % 4 == 0],
+                         fontsize=axis_ticks_fontsize)
+        ax[2].xaxis.set_minor_locator(MultipleLocator(1))
         ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
-        ax[3].set_yticks([20, 22])
         ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
-        ax[3].xaxis.set_minor_locator(MultipleLocator(1))
-
-        fig.tight_layout()
 
         if save_fig:
-            plt.savefig(f'{cf.FIGURES_PATH}/rounds_plot.{figure_format}', format=figure_format)
+            plt.savefig(f'{cf.FIGURES_PATH}/rounds_day_plot.{figure_format}', format=figure_format)
 
     finally:
         if con:
@@ -1187,6 +1204,61 @@ def statistics_baselines(df: pd.DataFrame) -> None:
     print('-' * 50)
 
 
+def statistics_cost_homogeneous(df: pd.DataFrame) -> None:
+    settings = ['2-multi-agent-com-rounds-1-homo', '2-multi-agent-no-com-homo']
+    df = df[df['setting'].isin(settings) | ((df['setting'] == 'single-agent') & (df['implementation'] == 'tabular'))]
+
+    costs = df[['setting', 'day', 'agent', 'cost']] \
+        .groupby(['setting', 'day', 'agent']).sum()\
+        .groupby(['setting', 'day']).mean().reset_index() \
+        .pivot(index=['day'], columns=['setting'], values=['cost'])
+
+    sample_single_agent = np.array(costs.loc[:, ('cost', 'single-agent')])
+    sample_no_com = np.array(costs.loc[:, ('cost', '2-multi-agent-no-com-homo')])
+    sample_com = np.array(costs.loc[:, ('cost', '2-multi-agent-com-rounds-1-homo')])
+
+    single_no_com = sample_single_agent - sample_no_com
+    single_com = sample_single_agent - sample_com
+    com_no_com = sample_com - sample_no_com
+
+    _, p_single_no_com = stats.ttest_1samp(single_no_com, 0)
+    _, p_single_com = stats.ttest_1samp(single_com, 0)
+    _, p_com_no_com = stats.ttest_1samp(com_no_com, 0)
+
+    print('Test difference in cost between homogeneous agents')
+    print(f'Difference single-agent vs no-com: p-value = {p_single_no_com}')
+    print(f'Difference single-agent vs com: p-value = {p_single_com}')
+    print(f'Difference no-com vs com: p-value = {p_com_no_com}')
+    print('-' * 50)
+
+
+def statistics_cost_heterogeneous(df: pd.DataFrame) -> None:
+    settings = ['2-multi-agent-com-rounds-1-homo', '2-multi-agent-com-rounds-1-hetero',
+                '2-multi-agent-no-com-homo', '2-multi-agent-no-com-hetero']
+    df = df[df['setting'].isin(settings)]
+
+    costs = df[['setting', 'day', 'agent', 'cost']] \
+        .groupby(['setting', 'day', 'agent']).sum()\
+        .groupby(['setting', 'day']).mean().reset_index() \
+        .pivot(index=['day'], columns=['setting'], values=['cost'])
+
+    sample_no_com_homo = np.array(costs.loc[:, ('cost', '2-multi-agent-no-com-homo')])
+    sample_no_com_hetero = np.array(costs.loc[:, ('cost', '2-multi-agent-no-com-hetero')])
+    sample_com_homo = np.array(costs.loc[:, ('cost', '2-multi-agent-com-rounds-1-homo')])
+    sample_com_hetero = np.array(costs.loc[:, ('cost', '2-multi-agent-com-rounds-1-hetero')])
+
+    diff_no_com = sample_no_com_homo - sample_no_com_hetero
+    diff_com = sample_com_homo - sample_com_hetero
+
+    _, p_no_com = stats.ttest_1samp(diff_no_com, 0)
+    _, p_com = stats.ttest_1samp(diff_com, 0)
+
+    print('Test difference in cost between homogeneous and heterogeneous')
+    print(f'Difference in no-com: p-value = {p_no_com}')
+    print(f'Difference in com: p-value = {p_com}')
+    print('-' * 50)
+
+
 def statistics_community_scale(df: pd.DataFrame) -> None:
     settings = ['2-multi-agent-com-rounds-1-hetero', '3-multi-agent-com-rounds-1-hetero',
                 '4-multi-agent-com-rounds-1-hetero', '5-multi-agent-com-rounds-1-hetero']
@@ -1201,16 +1273,26 @@ def statistics_community_scale(df: pd.DataFrame) -> None:
     samples = [np.array(costs.loc[costs['agents'] == i, 'cost']) for i in pd.unique(costs['agents'])]
     _, p_levene = stats.levene(*samples)
     _, p_anova = stats.f_oneway(*samples)
+    _, p_anova_reduced = stats.f_oneway(*samples[1:])
 
     print('Analysis of the influence of community scale:')
     print(f'Same variance: p-value = {p_levene}')
     print(f'Same mean: p-value = {p_anova}')
+    print(f'Same mean (without 2-agent): p-value = {p_anova_reduced}')
+    print('-' * 50)
 
 
 def statistics_nr_rounds(df: pd.DataFrame) -> None:
-    settings = ['2-multi-agent-com-rounds-1-hetero', '2-multi-agent-com-rounds-2-hetero',
-                '2-multi-agent-com-rounds-3-hetero']
+    settings = ['3-multi-agent-com-rounds-1-hetero', '3-multi-agent-com-rounds-2-hetero',
+                '3-multi-agent-com-rounds-3-hetero']
     df = df[df['setting'].isin(settings)]
+
+    days = [d for d in pd.unique(df['day'])]
+    df_costs = (df[['setting', 'agent', 'day', 'cost']]
+        .groupby(['setting', 'agent', 'day']).sum().reset_index()
+        .pivot(index=['setting'], columns=['agent', 'day'], values=['cost']))
+    # array: days x agents x settings
+    costs = np.array([[df_costs.loc[:, ('cost', a, d)] for a in range(3)] for d in days])
 
     df = df[['setting', 'agent', 'day', 'cost']] \
         .groupby(['setting', 'agent', 'day']).sum() \
@@ -1223,9 +1305,20 @@ def statistics_nr_rounds(df: pd.DataFrame) -> None:
     _, p_levene = stats.levene(*samples)
     _, p_anova = stats.f_oneway(*samples)
 
+    diff_12 = (costs[:, :, 0] - costs[:, :, 1]).mean(axis=0)
+    diff_13 = (costs[:, :, 0] - costs[:, :, 2]).mean(axis=0)
+    diff_23 = (costs[:, :, 1] - costs[:, :, 2]).mean(axis=0)
+    _, p_diff_12 = stats.ttest_1samp(diff_12, 0)
+    _, p_diff_13 = stats.ttest_1samp(diff_13, 0)
+    _, p_diff_23 = stats.ttest_1samp(diff_23, 0)
+
     print('Analysis of the influence of rounds:')
     print(f'Same variance: p-value = {p_levene}')
     print(f'Same mean: p-value = {p_anova}')
+    print(f'Difference 1 vs 2 rounds: p-value = {p_diff_12}')
+    print(f'Difference 1 vs 3 rounds: p-value = {p_diff_13}')
+    print(f'Difference 2 vs 3 rounds: p-value = {p_diff_23}')
+    print('-' * 50)
 
 
 def statistical_tests() -> None:
@@ -1238,6 +1331,8 @@ def statistical_tests() -> None:
         df['heatpump'] *= 1e-3
 
         statistics_baselines(df)
+        statistics_cost_homogeneous(df)
+        statistics_cost_heterogeneous(df)
         statistics_community_scale(df)
         statistics_nr_rounds(df)
 
@@ -1246,15 +1341,15 @@ def statistical_tests() -> None:
             con.close()
 
 
-save_figures = False
+save_figures = True
 if __name__ == "__main__":
     # statistical_tests()
 
-    show_test_profiles(save_figs=save_figures)
-    show_prices(save_fig=save_figures)
-    plot_tabular_comparison(save_figs=save_figures)
+    # show_test_profiles(save_figs=save_figures)
+    # show_prices(save_fig=save_figures)
+    # plot_tabular_comparison(save_figs=save_figures)
+    compare_decisions_rounds(save_fig=save_figures)
     # compare_decisions_artificial(save_fig=save_figures)
-    # compare_decisions_rounds(save_fig=save_figures)
     # compare_q_values()
 
-    # plt.show()
+    plt.show()

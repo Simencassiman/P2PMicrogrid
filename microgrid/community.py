@@ -353,7 +353,7 @@ def save_community_results(con: sqlite3.Connection, is_testing: bool,
     temperatures = [agent.heating.get_history() for agent in community.agents]
     heatpump = [agent.heating._power_history for agent in community.agents]
     costs = [cost[:, i].tolist() for i in range(cost.shape[-1])]
-    days = [int(day)] * len(time)
+    days = [day] * len(time)
 
     for i, data in enumerate(zip(loads, pvs, temperatures, heatpump, costs)):
         if is_testing:
@@ -407,7 +407,7 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
 
         if con:
             print("Saving...")
-            save_community_results(con, is_testing, setting, day, community, cost.numpy())
+            save_community_results(con, is_testing, setting, int(day), community, cost.numpy())
 
         print('-' * 10)
 
@@ -439,7 +439,7 @@ if __name__ == '__main__':
 
     try:
         # main(db_connection, load_agents=True, analyse=True)
-        load_and_run(db_connection, is_testing=False, analyse=False)
+        load_and_run(db_connection, is_testing=True, analyse=False)
     finally:
         if db_connection:
             db_connection.close()
