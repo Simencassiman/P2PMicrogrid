@@ -1,6 +1,6 @@
 # Python Libraries
 import re
-from typing import List
+from typing import List, Dict
 import json
 from datetime import datetime
 from calendar import monthrange
@@ -443,6 +443,8 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
     ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=secondary_color)
     ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
     ax[0].plot(time, net_power, color=primary_color)
+
+    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left')
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
     ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
@@ -454,6 +456,8 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
     ax12.plot(time, injection_price, ':', color=secondary_color)
     ax12.plot(time, p2p_price, '--', color=secondary_color)
     ax[1].plot(time, timeslot_info.loc[:, ('cost', 0)], color=primary_color)
+
+    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
     ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
     ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
     ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
@@ -465,11 +469,13 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
+    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001)
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
-    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize, loc='top')
 
     # Temperature
     ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
+    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
     ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
     ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
@@ -521,6 +527,8 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
     ax[0].plot(time, timeslot_info.loc[:, ('load', 0)], color=secondary_color)
     ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
     ax[0].plot(time, net_power, color=primary_color)
+
+    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left')
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
     ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
@@ -532,6 +540,8 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
     ax12.plot(time, grid_price, color=secondary_color)
     ax12.plot(time, injection_price, ':', color=secondary_color)
     ax12.plot(time, p2p_price, '--', color=secondary_color)
+
+    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
     ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
     ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
     ax[1].set_zorder(1)
@@ -543,11 +553,13 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
+    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001)
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
-    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
+    ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize, loc='top')
 
     # Temperature
     ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
+    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
     ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
     ax[3].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
@@ -618,7 +630,7 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
     # Heat pump
     width = 0.4
 
-    # agent 0
+    # Agent 0
     ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
     ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 0)],
               label='Communication', width=width, color=primary_color)
@@ -629,7 +641,7 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
     ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
                  fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
 
-    # agent 1
+    # Agent 1
     ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
     ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 1)],
               label='Communication', width=width, color=primary_color)
@@ -1032,8 +1044,8 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[2].bar(x + 1.5 * width, decisions.loc[:, ('decision', 3)], label='Round 3', width=width)
 
         ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
-        ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[2].legend(bbox_to_anchor=(1.04, 1.2), loc="upper left", fontsize=axis_label_fontsize)
+        ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize, loc='top')
+        ax[2].legend(bbox_to_anchor=(1.04, 1.2), loc='upper left', fontsize=axis_label_fontsize)
 
         # Temperature
         ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
@@ -1060,7 +1072,7 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
 
     try:
         df = db.get_test_results(con)
-        df = df[(df['setting'].isin(['2-agent-pv-drop-com', '2-agent-pv-drop-no-com'])) & (df['day'] == 8)]
+        df = df[(df['setting'].isin(['2-agent-1-pv-drop-com', '2-agent-1-pv-drop-no-com'])) & (df['day'] == 10)]
 
         df[['load', 'pv']] = df[['load', 'pv']] * 1e-3
         df['time'] = df['time'].map(lambda t: t * 24)
@@ -1079,73 +1091,80 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         p2p_price = (grid_price + injection_price) / 2
 
         # Make plot
-        fig, ax = plt.subplots(6, 1, figsize=(10, 8), sharex=True)
+        fig, ax = plt.subplots(6, 1, figsize=(5.5, 5), sharex=True)
         fig.suptitle("Agent's state and decisions throughout the day", color=base_color, fontsize=title_fontsize)
+        fig.subplots_adjust(left=0.1, right=0.7, hspace=0.4)
 
         # Powers
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-pv-drop-com', 0)], color=primary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-pv-drop-com', 1)], color=secondary_color)
-        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-agent-pv-drop-com', 0)], '--', color=primary_color)
-        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0])
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-1-pv-drop-com', 0)], color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('load', '2-agent-1-pv-drop-com', 1)], color=secondary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-agent-1-pv-drop-com', 0)], '--', color=primary_color)
+        ax[0].plot(time, timeslot_info.loc[:, ('pv', '2-agent-1-pv-drop-com', 1)], '--', color=secondary_color)
+        ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-        ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV Agent 0", "PV Agent 1"], labelcolor=base_color,
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, -0.3), loc="lower left")
 
         # Prices
         ax[1].plot(time, grid_price, color=primary_color)
         ax[1].plot(time, injection_price, color=secondary_color)
         ax[1].plot(time, p2p_price, '--', color=primary_color)
-        ax[1].set_yticks([0.07, 0.12, 0.17])
+        ax[1].set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
         ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
-        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, bbox_to_anchor=(1.04, 1), loc="upper left")
+        ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
+                     bbox_to_anchor=(1.02, -0.15), loc="lower left")
 
         # Heat pump
         width = 0.4
 
-        # agent 0
-        ax[2].set_title("agent 0", fontsize=10, loc='right')
-        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-com', 0)],
+        # Agent 0
+        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-com', 0)],
                   label='Communication', width=width, color=primary_color)
-        ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-no-com', 0)],
+        ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-no-com', 0)],
                   label='No communication', width=width, color=secondary_color)
-        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 0), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
 
-        # agent 1
-        ax[3].set_title("agent 1", fontsize=10, loc='right')
-        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump','2-agent-pv-drop-com', 1)],
+        # Agent 1
+        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-com', 1)],
                   label='Communication', width=width, color=primary_color)
-        ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-pv-drop-no-com', 1)],
+        ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-no-com', 1)],
                   label='No communication', width=width, color=secondary_color)
-        ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0])
+        ax[3].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[3].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
 
         # Temperature
-        ax[4].set_title("agent 0", fontsize=10, loc='right')
-        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-com', 0)],
+        # Agent 0
+        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-com', 0)],
                    color=primary_color)
-        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-no-com', 0)],
+        ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-no-com', 0)],
                    color=secondary_color)
-        ax[4].set_yticks([20, 22])
+        ax[4].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
         ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
-                     bbox_to_anchor=(1.04, 0), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
 
-        ax[5].set_title("agent 1", fontsize=10, loc='right')
-        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-com', 1)],
+        # Agent 1
+        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-com', 1)],
                    color=primary_color)
-        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-pv-drop-no-com', 1)],
+        ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-no-com', 1)],
                    color=secondary_color)
-        ax[5].set_ylabel("       Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
-        ax[5].set_xticks([0, 24, 48, 72, 95], ["00:00", "06:00", "12:00", "18:00", "23:45"])
-        ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
-        ax[5].set_yticks([20, 22])
+        ax[5].set_ylabel("  Temperature [°C]", loc='bottom', color=base_color, fontsize=axis_label_fontsize)
+        ax[5].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
-        ax[5].xaxis.set_minor_locator(MultipleLocator(1))
 
-        fig.tight_layout()
+        ax[5].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
+                         [re.sub(' ', '0', f'{i / 4:2.0f}:00' if i % 16 == 0 else '') for i in range(96 + 1) if
+                          i % 4 == 0],
+                         fontsize=axis_ticks_fontsize)
+        ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
+        ax[5].xaxis.set_minor_locator(MultipleLocator(1))
 
         if save_fig:
             plt.savefig(f'{cf.FIGURES_PATH}/artificial_pv_decisions_plot.{figure_format}', format=figure_format)
@@ -1194,7 +1213,7 @@ def statistics_baselines(df: pd.DataFrame) -> None:
 
     rule_tabular = sample_rule_based - sample_tabular
     semi_tabular = sample_semi_intelligent - sample_tabular
-    
+
     _, p_rule_tabular = stats.ttest_1samp(rule_tabular, 0)
     _, p_semi_tabular = stats.ttest_1samp(semi_tabular, 0)
 
@@ -1341,15 +1360,192 @@ def statistical_tests() -> None:
             con.close()
 
 
-save_figures = True
+def clean_ddpg_data(df: pd.DataFrame, index: str) -> pd.DataFrame:
+    df = df.groupby(['settings', index]).mean().reset_index()
+    df[index] = df[index].map(lambda e: float(e))
+    settings = df['settings'].str.split(';').map(lambda l: list(map(lambda s: s.split('='), l)))
+    fields = [l[0] for l in settings.loc[0]]
+
+    for i, field in enumerate(fields):
+        if field == 'ls':
+            field = 'lr'
+        if field in {'episodes', 'bs', 'bu'}:
+            df[field] = settings.map(lambda l: int(l[i][1]))
+        elif field in {'gamma', 'ls', 'sd'}:
+            df[field] = settings.map(lambda l: float(l[i][1]))
+        else:
+            df[field] = settings.map(lambda l: l[i][1])
+
+    df.drop(columns=['tau', 'theta', 'sigma', 'horizon'], inplace=True)
+
+    return df
+
+
+def make_ddpg_plot(df: pd.DataFrame, training: bool, save_figs: bool = False) -> None:
+    activations = pd.unique(df['activation'])
+    episodes = sorted(pd.unique(df['episodes']))
+    learning_rates = sorted(pd.unique(df['lr']))
+    buffer_sizes = sorted(pd.unique(df['bu']))
+    batch_sizes = sorted(list(pd.unique(df['bs'])))
+    gammas = sorted(pd.unique(df['gamma']))
+    stds = sorted(pd.unique(df['sd']))
+
+    if training:
+        data = df.pivot(index=['episode'],
+                        columns=['activation', 'episodes', 'bu', 'bs', 'gamma', 'lr', 'sd'],
+                        values=['training', 'episode'])
+        attributes = ('episode', 'training')
+        offset = 100
+        formatter = matplotlib.ticker.FuncFormatter(lambda y, _: f'{y:.0f}')
+    else:
+        data = df.pivot(index=['time'],
+                        columns=['activation', 'episodes', 'bu', 'bs', 'gamma', 'lr', 'sd'],
+                        values=['time', 'load', 'pv', 'target_load', 'target_pv'])
+        attributes = ('time', 'load', 'target_load')
+        offset = 0
+        formatter = matplotlib.ticker.FuncFormatter(lambda y, _: f'{y:.2f}')
+
+    for activation in activations:
+        for std in stds:
+            for bu in buffer_sizes:
+
+                available_learning_rates = [lr for lr in learning_rates
+                                            if df[['activation', 'sd', 'lr']]
+                                                .loc[(df['activation'] == activation) & (df['bu'] == bu)
+                                                     & (df['sd'] == std)
+                                                     & (df['lr'] == lr)].any().any()]
+                available_batch_sizes = [bs for bs in batch_sizes
+                                         if df[['activation', 'sd', 'lr']]
+                                             .loc[(df['activation'] == activation) & (df['bu'] == bu)
+                                                  & (df['sd'] == std)
+                                                  & (df['bs'] == bs)].any().any()]
+
+                if len(available_learning_rates) == 0 or len(available_batch_sizes) == 0:
+                    continue
+
+                # Make plot
+                fig, ax = plt.subplots(len(available_batch_sizes), len(available_learning_rates),
+                                       figsize=(5.5, 1 + len(available_batch_sizes) * 1.5), sharex=True, sharey=True)
+                fig.subplots_adjust(wspace=0.1, right=0.89)
+                fig.suptitle(f'{activation.capitalize()} activation (buffer size = {bu/1000}E03, noise = {std})',
+                             fontsize=title_fontsize)
+
+                couples: Dict[float, List[float]]
+                for j, lr in enumerate(available_learning_rates):
+                    for i, bs in enumerate(available_batch_sizes):
+
+                        # Select current plot (not all axis objects can be indexed)
+                        if len(available_batch_sizes) == 1 and len(available_learning_rates) == 1:
+                            current_ax = ax
+                        elif len(available_batch_sizes) == 1:
+                            current_ax = ax[j]
+                        elif len(available_learning_rates) == 1:
+                            current_ax = ax[i]
+                        else:
+                            current_ax = ax[i, j]
+
+                        # Add parameter information to grid
+                        if j == len(available_learning_rates) - 1 and len(available_batch_sizes) > 1:
+                            current_ax.text(.892, 0.8 - i * 0.85 / len(available_batch_sizes),
+                                            f'Batch size\n{bs}',
+                                            fontsize=axis_label_fontsize, transform=fig.transFigure)
+                        if i == 0 and len(available_learning_rates) > 1:
+                            current_ax.set_title(f'Learning rate {lr}', fontsize=axis_label_fontsize)
+
+                        # Select data to plot
+                        available_series = [(g, ep) for g in gammas for ep in episodes
+                                            if df.loc[(df['activation'] == activation) & (df['bu'] == bu)
+                                                      & (df['sd'] == std) & (df['gamma'] == g) & (df['bs'] == bs)
+                                                      & (df['lr'] == lr) & (df['episodes'] == ep)].any().any()]
+
+                        if len(available_series) == 0:
+                            continue
+
+                        couples = {g: [] for g in list(zip(*available_series))[0]}
+                        for g, ep in available_series:
+                            couples[g].append(ep)
+
+                        print(list(couples.keys()))
+                        print('-' * 50)
+
+                        series = [[tuple([data.loc[:, (at, activation, ep, bu, bs, g, lr, std)]
+                                          for at in attributes])
+                                   for ep in eps]
+                                  for g, eps in couples.items()]
+
+                        # Plot data
+                        if training:
+                            for x, y in map(lambda s: list(map(lambda l: pd.concat(l), zip(*s))), series):
+                                current_ax.plot(x, y)
+                            independent_variable = x + offset
+
+                        else:
+                            for t, l, tl in map(lambda s: s[-1], series):    # Take last series so that ep = max(eps)
+                                current_ax.plot(t, l)
+                            current_ax.plot(t, tl)
+                            independent_variable = t + .01
+
+                        # Add info
+                        if i == 0 and j == 0 and len(couples.keys()) > 1:
+                            fig.subplots_adjust(bottom=0.2)
+
+                            legend_info = list(map(lambda g: f'gamma = {g}', couples.keys()))
+                            if not training:
+                                legend_info += ['Target load']
+
+                            current_ax.legend(legend_info, fontsize=axis_label_fontsize,
+                                              bbox_to_anchor=(.38, .005), bbox_transform=fig.transFigure,
+                                              loc="lower left")
+                        elif len(available_batch_sizes) == 1:
+                            fig.subplots_adjust(bottom=.2)
+
+                        if i == len(available_batch_sizes) - 1:
+                            current_ax.set_xlabel("Episodes" if training else "Time step", fontsize=axis_label_fontsize)
+                            ticks = np.linspace(0, independent_variable.max(), num=5)
+                            current_ax.set_xticks(ticks,
+                                                  map(lambda t: str(int(t)),
+                                                      ticks if training else np.round(ticks * 96)),
+                                                  fontsize=axis_ticks_fontsize)
+
+                        if j == 0:
+                            current_ax.set_ylabel("Reward", fontsize=axis_label_fontsize)
+                            ticks = current_ax.get_yticks()
+                            current_ax.set_yticks(ticks, ticks, fontsize=axis_ticks_fontsize)
+                            current_ax.yaxis.set_major_formatter(formatter)
+
+                if save_figs:
+                    fig.savefig(f'{cf.FIGURES_PATH}/ddpg_plot_{"training" if training else "testing"}_'
+                                f'{activation}_{std}_{bu}.{figure_format}', format=figure_format)
+
+
+def ddpg_resuls(save_figs: bool = False) -> None:
+    con = db.get_connection()
+
+    try:
+        df = db.get_ddpg_training_data(con)
+        df = clean_ddpg_data(df, 'episode')
+        make_ddpg_plot(df, True, save_figs)
+
+        df = db.get_ddpg_validation_data(con)
+        df = clean_ddpg_data(df, 'time')
+        make_ddpg_plot(df, False, save_figs)
+
+    finally:
+        if con:
+            con.close()
+
+
+save_figures = False
 if __name__ == "__main__":
     # statistical_tests()
 
     # show_test_profiles(save_figs=save_figures)
     # show_prices(save_fig=save_figures)
     # plot_tabular_comparison(save_figs=save_figures)
-    compare_decisions_rounds(save_fig=save_figures)
+    # compare_decisions_rounds(save_fig=save_figures)
     # compare_decisions_artificial(save_fig=save_figures)
     # compare_q_values()
+
+    ddpg_resuls(save_figs=save_figures)
 
     plt.show()

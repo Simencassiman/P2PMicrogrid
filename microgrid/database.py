@@ -325,6 +325,28 @@ def get_rounds_decisions(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
     return None
 
 
+def get_ddpg_training_data(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT * 
+            FROM hyperparameters_single_day
+        """
+        return pd.read_sql_query(query, con)
+
+    return None
+
+
+def get_ddpg_validation_data(con: sqlite3.Connection) -> Union[pd.DataFrame, None]:
+    if con:
+        query = """
+            SELECT * 
+            FROM single_day_best_results
+        """
+        return pd.read_sql_query(query, con)
+
+    return None
+
+
 if __name__ == '__main__':
 
     conn = get_connection()
@@ -335,12 +357,13 @@ if __name__ == '__main__':
         try:
 
             query = """
-                SELECT *     
-                FROM test_results
+                SELECT settings
+                FROM hyperparameters_single_day
+                WHERE settings LIKE '%linear%'
             """
 
             df = pd.read_sql_query(query, conn)
-            print(df)
+            print(list(df.loc[:,'settings']))
 
             # cursor.execute(query)
             # conn.commit()
