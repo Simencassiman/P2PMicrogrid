@@ -13,12 +13,13 @@ import matplotlib.pyplot as plt
 
 # Local modules
 import config as cf
+import setup
 import heating
 import dataset as ds
 
 
 # ------- Parameter setup ------- #
-seed = 42
+seed = setup.seed
 tf.random.set_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
@@ -404,7 +405,7 @@ def run_episode(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.
 
         # Store reward
         p_out = (state[2] + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * cf.TIME_SLOT / cf.MINUTES_PER_HOUR
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * setup.TIME_SLOT / setup.MINUTES_PER_HOUR
         t_penalty = max(max(0., 20. - t_in), max(0., t_in - 22.))
         t_penalty = tf.where(t_penalty > 0, t_penalty + 1, 0)
         r = - (cost + 10 * t_penalty ** 2)
@@ -480,7 +481,7 @@ def test(model: ActorModel) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]
 
         # Calculate cost
         p_out = (state[2] * balance_max + scaled_action) / 1e3
-        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * cf.TIME_SLOT / cf.MINUTES_PER_HOUR
+        cost = tf.where(p_out >= 0, p_out * p, p_out * 0.07) * setup.TIME_SLOT / setup.MINUTES_PER_HOUR
         costs = costs.write(t, -cost)
 
     states = states.stack()
@@ -525,11 +526,11 @@ if __name__ == '__main__':
 
     # Generate prices
     env_df['price'] = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(2 * np.pi * np.array(env_df['time']) * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD
-                      + cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
+            (setup.GRID_COST_AVG
+             + setup.GRID_COST_AMPLITUDE
+             * np.sin(2 * np.pi * np.array(env_df['time']) * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD
+                      + setup.GRID_COST_PHASE)
+             ) / setup.CENTS_PER_EURO  # from c€ to €
     )
 
     # Transform to dataset
@@ -541,10 +542,10 @@ if __name__ == '__main__':
     price = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
     for t, (state, _) in enumerate(env_ds):
         price = price.write(t,
-                (cf.GRID_COST_AVG
-                 + cf.GRID_COST_AMPLITUDE
-                 * tf.math.sin(state[0] * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-                 ) / cf.CENTS_PER_EURO  # from c€ to €
+                (setup.GRID_COST_AVG
+                 + setup.GRID_COST_AMPLITUDE
+                 * tf.math.sin(state[0] * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+                 ) / setup.CENTS_PER_EURO  # from c€ to €
         )
 
     price = price.stack()

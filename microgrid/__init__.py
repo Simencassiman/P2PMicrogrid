@@ -1,3 +1,3 @@
 
-__all__ = ['agent', 'community', 'config', 'controller', 'data_analysis', 'database', 'environment', 'heating', 'ml',
+__all__ = ['agent', 'community', 'config', 'data_analysis', 'database', 'environment', 'heating', 'ml',
            'rl', 'storage']

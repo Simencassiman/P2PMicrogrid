@@ -1,3 +1,4 @@
+# Python Libraries
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
@@ -8,15 +9,16 @@ from datetime import datetime
 from typing import List, Union, Optional
 from functools import reduce
 
-from config import DB_PATH, TIME_SLOT, MINUTES_PER_HOUR
+# Local modules
+import setup
 from database import get_connection, get_data
 
 
-seed = 42
+seed = setup.seed
 tf.random.set_seed(seed)
 np.random.seed(seed)
 
-conn = get_connection(DB_PATH)
+conn = get_connection()
 start = datetime(2021, 11, 1)
 val_start = datetime(2021, 11, 2)
 val_end = datetime(2021, 11, 2)
@@ -27,7 +29,7 @@ df = get_data(conn, start, end)
 def compute_time_slot(time) -> int:
     t = datetime.strptime(time, '%H:%M:%S')
 
-    return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
+    return (t.minute / setup.TIME_SLOT) + t.hour * setup.MINUTES_PER_HOUR / setup.TIME_SLOT
 
 
 df['time'] = df['time'].map(lambda t: compute_time_slot(t))

@@ -1,27 +1,21 @@
 # Python Libraries
 from __future__ import annotations
-
 import collections
 import json
-import re
 import sqlite3
 import statistics
 import time
-import traceback
-from functools import reduce
 from typing import List, Tuple, Callable, Any, Optional
-import numpy as np
 
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tqdm import trange
-import matplotlib.pyplot as plt
 
 # Local Modules
-import config as cf
-from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY
+import setup
 from environment import env
-from agent import Agent, ActingAgent, GridAgent, RuleAgent, RLAgent, QAgent, DQNAgent
+from agent import Agent, ActingAgent, GridAgent, RuleAgent, QAgent, DQNAgent
 from production import Prosumer, PV
 from storage import NoStorage
 from heating import HPHeating, HeatPump
@@ -31,59 +25,9 @@ import database as db
 
 
 # ------- Parameter setup ------- #
-seed = 42
+seed = setup.seed
 tf.random.set_seed(seed)
 np.random.seed(seed)
-
-
-def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
-                  homogeneous: bool = False) -> CommunityMicrogrid:
-    # Load time series
-    env_df, agent_dfs = ds.get_train_data()
-
-    if homogeneous:
-        agent_dfs = [agent_dfs[0]] * n_agents
-
-    timeline = env_df['time'].map(lambda t: int(t * MINUTES_PER_HOUR / TIME_SLOT * HOURS_PER_DAY))
-
-    agents: List[ActingAgent] = []
-
-    load_ratings = np.random.normal(0.7, 0.2, n_agents) if not homogeneous else np.array([0.7] * n_agents)
-    pv_ratings = np.random.normal(4, 0.2, n_agents) if not homogeneous else np.array([4] * n_agents)
-
-    # Create agents
-    Agent.reset_ids()
-    for i in range(n_agents):
-        max_power = max(load_ratings[i], pv_ratings[i])
-        safety = 1.1
-
-        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * load_ratings[i] * 1e3)
-        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * pv_ratings[i] * 1e3)
-
-        agents.append(agent_constructor(agent_load,
-                                        Prosumer(PV(peak_power=pv_ratings[i] * 1e3,
-                                                    production=agent_pv)),
-                                        NoStorage(),
-                                        HPHeating(HeatPump(cop=3.0, max_power=3 * 1e3, power=tf.constant([0.0])), 21.0),
-                                        max_in=max_power * safety * 1e3,
-                                        max_out=-(max_power + safety * 1e3)
-        ))
-
-    # Prepare environment
-    env.setup(ds.dataframe_to_dataset(env_df))
-
-    return CommunityMicrogrid(timeline, agents, rounds)
-
-
-def get_rule_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
-    return get_community(RuleAgent, n_agents, homogeneous=homogeneous)
-
-
-def get_rl_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
-    if implementation == 'tabular':
-        return get_community(QAgent, n_agents, homogeneous=homogeneous)
-    if implementation == 'dqn':
-        return get_community(DQNAgent, n_agents, homogeneous=homogeneous)
 
 
 class CommunityMicrogrid:
@@ -116,7 +60,7 @@ class CommunityMicrogrid:
                          grid_power * buying_price[:, None],
                          grid_power * injection_price[:, None])
                 + peer_power * p2p_price[:, None]
-        ) * TIME_SLOT / MINUTES_PER_HOUR * 1e-3
+        ) * setup.TIME_SLOT / setup.MINUTES_PER_HOUR * 1e-3
 
         return costs
 
@@ -249,6 +193,56 @@ class CommunityMicrogrid:
 
         self.grid.reset()
         self.decisions = np.zeros((len(env), self._rounds + 1, len(self.agents)))
+
+
+def get_community(agent_constructor: Callable[[Any], ActingAgent], n_agents: int,
+                  homogeneous: bool = False) -> CommunityMicrogrid:
+    # Load time series
+    env_df, agent_dfs = ds.get_train_data()
+
+    if homogeneous:
+        agent_dfs = [agent_dfs[0]] * n_agents
+
+    timeline = env_df['time'].map(lambda t: int(t * setup.MINUTES_PER_HOUR / setup.TIME_SLOT * setup.HOURS_PER_DAY))
+
+    agents: List[ActingAgent] = []
+
+    load_ratings = np.random.normal(0.7, 0.2, n_agents) if not homogeneous else np.array([0.7] * n_agents)
+    pv_ratings = np.random.normal(4, 0.2, n_agents) if not homogeneous else np.array([4] * n_agents)
+
+    # Create agents
+    Agent.reset_ids()
+    for i in range(n_agents):
+        max_power = max(load_ratings[i], pv_ratings[i])
+        safety = 1.1
+
+        agent_load = ds.dataframe_to_dataset(agent_dfs[i]['load'] * load_ratings[i] * 1e3)
+        agent_pv = ds.dataframe_to_dataset(agent_dfs[i]['pv'] * pv_ratings[i] * 1e3)
+
+        agents.append(agent_constructor(agent_load,
+                                        Prosumer(PV(peak_power=pv_ratings[i] * 1e3,
+                                                    production=agent_pv)),
+                                        NoStorage(),
+                                        HPHeating(HeatPump(cop=3.0, max_power=3 * 1e3, power=tf.constant([0.0])), 21.0),
+                                        max_in=max_power * safety * 1e3,
+                                        max_out=-(max_power + safety * 1e3)
+        ))
+
+    # Prepare environment
+    env.setup(ds.dataframe_to_dataset(env_df))
+
+    return CommunityMicrogrid(timeline, agents, rounds)
+
+
+def get_rule_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
+    return get_community(RuleAgent, n_agents, homogeneous=homogeneous)
+
+
+def get_rl_based_community(n_agents: int, homogeneous: bool) -> CommunityMicrogrid:
+    if implementation == 'tabular':
+        return get_community(QAgent, n_agents, homogeneous=homogeneous)
+    if implementation == 'dqn':
+        return get_community(DQNAgent, n_agents, homogeneous=homogeneous)
 
 
 def main(con: sqlite3.Connection, load_agents: bool = False, analyse: bool = False) -> None:
@@ -418,14 +412,14 @@ def load_and_run(con: Optional[sqlite3.Connection] = None, is_testing: bool = Fa
         analyse_community_output(community.agents, community.timeline.tolist(), power.numpy(), cost.numpy())
 
 
-starting_episodes = cf.starting_episodes
-max_episodes = cf.max_episodes
-min_episodes_criterion = cf.min_episodes_criterion
-save_episodes = cf.save_episodes
-nr_agents = cf.nr_agents
-rounds = cf.rounds
-homogeneous = cf.homogeneous
-implementation = cf.implementation
+starting_episodes = setup.starting_episodes
+max_episodes = setup.max_episodes
+min_episodes_criterion = setup.min_episodes_criterion
+save_episodes = setup.save_episodes
+nr_agents = setup.nr_agents
+rounds = setup.rounds
+homogeneous = setup.homogeneous
+implementation = setup.implementation
 setting = f'{nr_agents}-multi-agent-com-rounds-{rounds}-{"homo" if homogeneous else "hetero"}'
 
 
@@ -438,6 +432,7 @@ if __name__ == '__main__':
     db_connection = db.get_connection()
 
     try:
+        # Uncomment the desired functionality (comment out the other one)
         # main(db_connection, load_agents=True, analyse=True)
         load_and_run(db_connection, is_testing=True, analyse=False)
     finally:

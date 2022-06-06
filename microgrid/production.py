@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Generator, Tuple, List
 from dataclasses import dataclass
 from abc import abstractmethod
+
 import tensorflow as tf
 
 # Local modules
@@ -14,9 +15,6 @@ class Production(ElectricalAsset):
     @property
     @abstractmethod
     def production(self) -> Tuple[tf.Tensor, tf.Tensor]: ...
-
-    @abstractmethod
-    def step(self) -> None: ...
 
     @abstractmethod
     def reset(self) -> None: ...

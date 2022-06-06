@@ -16,13 +16,14 @@ from matplotlib.ticker import MultipleLocator
 
 # Local modules
 import config as cf
+import setup
 from agent import ActingAgent
 import database as db
 import dataset as ds
 
 
 # Config
-np.random.seed(42)
+np.random.seed(setup.seed)
 
 # Text document settings
 primary_color = '#000'
@@ -155,10 +156,10 @@ def show_test_profiles(save_figs: bool = False) -> None:
 def show_prices(save_fig: bool = False) -> None:
     time = np.arange(96)
     grid_price = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
+            (setup.GRID_COST_AVG
+             + setup.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+             ) / setup.CENTS_PER_EURO  # from c€ to €
     )
     injection_price = np.zeros(grid_price.shape)
     injection_price[:] = grid_price.min()[None]
@@ -186,13 +187,13 @@ def show_prices(save_fig: bool = False) -> None:
 def analyse_community_output(agents: List[ActingAgent], time: List[datetime],
                              power: np.ndarray, cost: np.ndarray) -> None:
 
-    slots_per_day = int(cf.MINUTES_PER_HOUR / cf.TIME_SLOT * cf.HOURS_PER_DAY)
+    slots_per_day = int(setup.MINUTES_PER_HOUR / setup.TIME_SLOT * setup.HOURS_PER_DAY)
     agent_ids = [a.id for a in agents]
 
     production = np.array(list(map(lambda a: a.pv.get_history(), agents))).transpose()
     self_consumption = (power < 0) * (production + power) + (power >= 0) * production
 
-    print(f'Energy consumed: {power.sum(axis=0) * cf.TIME_SLOT / cf.MINUTES_PER_HOUR * 1e-3} kWh')
+    print(f'Energy consumed: {power.sum(axis=0) * setup.TIME_SLOT / setup.MINUTES_PER_HOUR * 1e-3} kWh')
     print(f'Cost a total of: {cost} €')
 
     # Create plots
@@ -422,10 +423,10 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
 
     time = np.arange(96)
     grid_price = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
+            (setup.GRID_COST_AVG
+             + setup.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+             ) / setup.CENTS_PER_EURO  # from c€ to €
     )
     injection_price = np.zeros(grid_price.shape)
     injection_price[:] = grid_price.min()[None]
@@ -506,10 +507,10 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
 
     time = np.arange(96)
     grid_price = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
+            (setup.GRID_COST_AVG
+             + setup.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+             ) / setup.CENTS_PER_EURO  # from c€ to €
     )
     injection_price = np.zeros(grid_price.shape)
     injection_price[:] = grid_price.min()[None]
@@ -591,10 +592,10 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
                              values=['load', 'pv', 'temperature', 'heatpump'])
     time = np.arange(96)
     grid_price = (
-            (cf.GRID_COST_AVG
-             + cf.GRID_COST_AMPLITUDE
-             * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-             ) / cf.CENTS_PER_EURO  # from c€ to €
+            (setup.GRID_COST_AVG
+             + setup.GRID_COST_AMPLITUDE
+             * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+             ) / setup.CENTS_PER_EURO  # from c€ to €
     )
     injection_price = np.zeros(grid_price.shape)
     injection_price[:] = grid_price.min()[None]
@@ -879,10 +880,10 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
                                  values=['load', 'pv', 'temperature', 'heatpump'])
         time = np.arange(96)
         grid_price = (
-                (cf.GRID_COST_AVG
-                 + cf.GRID_COST_AMPLITUDE
-                 * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-                 ) / cf.CENTS_PER_EURO  # from c€ to €
+                (setup.GRID_COST_AVG
+                 + setup.GRID_COST_AMPLITUDE
+                 * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+                 ) / setup.CENTS_PER_EURO  # from c€ to €
         )
         injection_price = np.zeros(grid_price.shape)
         injection_price[:] = grid_price.min()[None]
@@ -993,10 +994,10 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
                                  values=['load', 'pv', 'temperature', 'heatpump', 'cost'])
         time = np.arange(96)
         grid_price = (
-                (cf.GRID_COST_AVG
-                 + cf.GRID_COST_AMPLITUDE
-                 * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-                 ) / cf.CENTS_PER_EURO  # from c€ to €
+                (setup.GRID_COST_AVG
+                 + setup.GRID_COST_AMPLITUDE
+                 * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+                 ) / setup.CENTS_PER_EURO  # from c€ to €
         )
         injection_price = np.zeros(grid_price.shape)
         injection_price[:] = grid_price.min()[None]
@@ -1081,10 +1082,10 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
                                  values=['load', 'pv', 'temperature', 'heatpump'])
         time = np.arange(96)
         grid_price = (
-                (cf.GRID_COST_AVG
-                 + cf.GRID_COST_AMPLITUDE
-                 * np.sin(time / 96 * 2 * np.pi * cf.HOURS_PER_DAY / cf.GRID_COST_PERIOD - cf.GRID_COST_PHASE)
-                 ) / cf.CENTS_PER_EURO  # from c€ to €
+                (setup.GRID_COST_AVG
+                 + setup.GRID_COST_AMPLITUDE
+                 * np.sin(time / 96 * 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD - setup.GRID_COST_PHASE)
+                 ) / setup.CENTS_PER_EURO  # from c€ to €
         )
         injection_price = np.zeros(grid_price.shape)
         injection_price[:] = grid_price.min()[None]
@@ -1465,9 +1466,6 @@ def make_ddpg_plot(df: pd.DataFrame, training: bool, save_figs: bool = False) ->
                         for g, ep in available_series:
                             couples[g].append(ep)
 
-                        print(list(couples.keys()))
-                        print('-' * 50)
-
                         series = [[tuple([data.loc[:, (at, activation, ep, bu, bs, g, lr, std)]
                                           for at in attributes])
                                    for ep in eps]
@@ -1535,15 +1533,15 @@ def ddpg_resuls(save_figs: bool = False) -> None:
             con.close()
 
 
-save_figures = False
+save_figures = True
 if __name__ == "__main__":
     # statistical_tests()
 
-    # show_test_profiles(save_figs=save_figures)
-    # show_prices(save_fig=save_figures)
-    # plot_tabular_comparison(save_figs=save_figures)
-    # compare_decisions_rounds(save_fig=save_figures)
-    # compare_decisions_artificial(save_fig=save_figures)
+    show_test_profiles(save_figs=save_figures)
+    show_prices(save_fig=save_figures)
+    plot_tabular_comparison(save_figs=save_figures)
+    compare_decisions_rounds(save_fig=save_figures)
+    compare_decisions_artificial(save_fig=save_figures)
     # compare_q_values()
 
     ddpg_resuls(save_figs=save_figures)

@@ -6,16 +6,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
 
 # Local modules
-import config as cf
-from config import TIME_SLOT, SECONDS_PER_MINUTE
+import setup
 from environment import env
 from electrical_asset import ElectricalAsset
 import dataset as ds
 
-np.random.seed(42)
+
+np.random.seed(setup.seed)
 
 """
     Simulator parameters
@@ -51,8 +50,8 @@ def temperature_simulation(t_out: float, t_in: float, t_bm: float,
             + f_rad * hp_power * hp_cop
     )
 
-    t_in_new = t_in + dT_in * SECONDS_PER_MINUTE * TIME_SLOT
-    t_m_new = t_bm + dT_m * SECONDS_PER_MINUTE * TIME_SLOT
+    t_in_new = t_in + dT_in * setup.SECONDS_PER_MINUTE * setup.TIME_SLOT
+    t_m_new = t_bm + dT_m * setup.SECONDS_PER_MINUTE * setup.TIME_SLOT
 
     return t_in_new, t_m_new
 
@@ -61,18 +60,15 @@ class Heating(ElectricalAsset):
 
     @property
     @abstractmethod
-    def lower_bound(self) -> float:
-        ...
+    def lower_bound(self) -> float: ...
 
     @property
     @abstractmethod
-    def upper_bound(self) -> float:
-        ...
+    def upper_bound(self) -> float: ...
 
     @property
     @abstractmethod
-    def temperature(self) -> tf.Tensor:
-        ...
+    def temperature(self) -> tf.Tensor: ...
 
     @property
     @abstractmethod
@@ -80,20 +76,13 @@ class Heating(ElectricalAsset):
 
     @property
     @abstractmethod
-    def power(self) -> tf.Tensor:
-        ...
+    def power(self) -> tf.Tensor: ...
 
     @abstractmethod
-    def has_heater(self) -> bool:
-        ...
+    def has_heater(self) -> bool: ...
 
     @abstractmethod
-    def set_power(self, power: float) -> None:
-        ...
-
-    @abstractmethod
-    def step(self) -> None:
-        ...
+    def set_power(self, power: float) -> None: ...
 
 
 class HPHeating(Heating):
@@ -109,9 +98,9 @@ class HPHeating(Heating):
         self._power_history = []
 
         self._temperature_setpoint = temperature_setpoint
-        self._t_building_mass = tf.convert_to_tensor([temperature_setpoint]) if cf.homogeneous \
+        self._t_building_mass = tf.convert_to_tensor([temperature_setpoint]) if setup.homogeneous \
                                 else tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
-        self._t_indoor = tf.convert_to_tensor([temperature_setpoint]) if cf.homogeneous \
+        self._t_indoor = tf.convert_to_tensor([temperature_setpoint]) if setup.homogeneous \
                         else tf.constant(np.random.normal(temperature_setpoint, 0.3, 1), dtype=tf.float32)
 
     @property
@@ -157,9 +146,9 @@ class HPHeating(Heating):
         self._time = 0
         self._history = []
         self._power_history = []
-        self._t_indoor = tf.convert_to_tensor([self._temperature_setpoint]) if cf.homogeneous \
+        self._t_indoor = tf.convert_to_tensor([self._temperature_setpoint]) if setup.homogeneous \
                         else tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
-        self._t_building_mass = tf.convert_to_tensor([self._temperature_setpoint]) if cf.homogeneous \
+        self._t_building_mass = tf.convert_to_tensor([self._temperature_setpoint]) if setup.homogeneous \
                                 else tf.constant(np.random.normal(self._temperature_setpoint, 0.3, 1), dtype=tf.float32)
 
     def get_history(self) -> List[float]:
@@ -175,26 +164,23 @@ class HeatPump:
 
 
 if __name__ == '__main__':
-    # power = 0.
-    #
-    # t_indoor = 21.
-    # t_building_mass = 20.
-    # cop = 3
-    #
-    # env_df, _ = ds.get_train_data()
-    # time = np.arange(len(env_df['time']))
-    #
-    # t_outdoor = np.array(env_df['temperature'])
-    # temp = np.zeros(len(time))
-    # bm_temp = np.zeros(len(time))
-    #
-    # for t in time:
-    #     temp[t] = t_indoor
-    #     bm_temp[t] = t_building_mass
-    #
-    #     t_indoor, t_building_mass = temperature_simulation(t_outdoor[t], t_indoor, t_building_mass, power, cop)
-    #
-    # plt.plot(time, t_outdoor)
-    # plt.plot(time, temp, bm_temp)
-    # plt.show()
-    print(np.random.normal(0, 0.3))
+    power = 0.
+
+    t_indoor = 21.
+    t_building_mass = 20.
+    cop = 3
+
+    env_df, _ = ds.get_train_data()
+    time = np.arange(len(env_df['time']))
+
+    t_outdoor = np.array(env_df['temperature'])
+    temp = np.zeros(len(time))
+    bm_temp = np.zeros(len(time))
+
+    for t in time:
+        temp[t] = t_indoor
+        bm_temp[t] = t_building_mass
+
+        t_indoor, t_building_mass = temperature_simulation(t_outdoor[t], t_indoor, t_building_mass, power, cop)
+
+    print(temp)

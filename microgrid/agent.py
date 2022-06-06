@@ -1,21 +1,21 @@
 # Python Libraries
-import re
-from typing import List, Tuple, Generator, Optional
 from abc import ABC, abstractmethod
+import re
+from typing import Tuple, Generator
+
 import numpy as np
 import tensorflow as tf
 
 # Local modules
-from config import TIME_SLOT, MINUTES_PER_HOUR, HOURS_PER_DAY, CENTS_PER_EURO
-import config as cf
-from controller import BackupController, BuildingController, ChargingController
+import setup
 from production import Production
 from storage import Storage
 from heating import Heating
 import rl
 
+
 # ------- Parameter setup ------- #
-seed = 42
+seed = setup.seed
 tf.random.set_seed(seed)
 np.random.seed(seed)
 
@@ -34,16 +34,7 @@ class Agent(ABC):
         cls.__last_id = -1
 
     @abstractmethod
-    def take_decision(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
-        ...
-
-    @abstractmethod
-    def _predict(self) -> List:
-        ...
-
-    @abstractmethod
-    def _communicate(self) -> List:
-        ...
+    def take_decision(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]: ...
 
     def step(self) -> None:
         self.time += 1
@@ -57,13 +48,13 @@ class GridAgent(Agent):
     def __init__(self):
         super(GridAgent, self).__init__()
 
-        self._cost_avg = cf.GRID_COST_AVG
-        self._cost_amplitude = cf.GRID_COST_AMPLITUDE
-        self._cost_phase = cf.GRID_COST_PHASE
-        self._cost_frequency = 2 * np.pi * HOURS_PER_DAY / cf.GRID_COST_PERIOD
-        self._cost_normalization = CENTS_PER_EURO
+        self._cost_avg = setup.GRID_COST_AVG
+        self._cost_amplitude = setup.GRID_COST_AMPLITUDE
+        self._cost_phase = setup.GRID_COST_PHASE
+        self._cost_frequency = 2 * np.pi * setup.HOURS_PER_DAY / setup.GRID_COST_PERIOD
+        self._cost_normalization = setup.CENTS_PER_EURO
 
-        self._injection_price = tf.convert_to_tensor([cf.GRID_INJECTION_PRICE])
+        self._injection_price = tf.convert_to_tensor([setup.GRID_INJECTION_PRICE])
 
     def take_decision(self, state: tf.Tensor, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]:
         cost = (
@@ -74,10 +65,6 @@ class GridAgent(Agent):
         )
 
         return tf.cast(cost, dtype=tf.float32), self._injection_price
-
-    def _predict(self) -> List: ...
-
-    def _communicate(self) -> List: ...
 
 
 class ActingAgent(Agent, ABC):
@@ -93,10 +80,6 @@ class ActingAgent(Agent, ABC):
         self.pv = production
         self.storage = storage
         self.heating = heating
-
-    # @property
-    # def load(self) -> Generator[tf.Tensor, None, None]:
-    #     return (l for l in self._load)
 
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Tuple[tf.Tensor, tf.Tensor]: ...
@@ -154,26 +137,20 @@ class RuleAgent(ActingAgent):
 
     def _update_storage(self, balance: float) -> float:
 
-        energy = balance * 60 * TIME_SLOT
+        energy = balance * setup.SECONDS_PER_MINUTE * setup.TIME_SLOT
         if balance > 0 and self.storage.available_energy > 0:
             # If not enough production and battery is not empty
             to_extract = min(energy, self.storage.available_energy)
             self.storage.discharge(self.storage.to_soc(to_extract))
-            balance -= to_extract / (60 * TIME_SLOT)
+            balance -= to_extract / (setup.SECONDS_PER_MINUTE * setup.TIME_SLOT)
 
         elif balance < 0 and not self.storage.is_full:
             # If too much production and battery is not full
             to_store = min(-energy, self.storage.available_space)
             self.storage.charge(self.storage.to_soc(to_store))
-            balance += to_store / (60 * TIME_SLOT)
+            balance += to_store / (setup.SECONDS_PER_MINUTE * setup.TIME_SLOT)
 
         return balance
-
-    def _predict(self) -> List:
-        pass
-
-    def _communicate(self) -> List:
-        pass
 
 
 class RLAgent(ActingAgent):
@@ -182,11 +159,6 @@ class RLAgent(ActingAgent):
         super(RLAgent, self).__init__(*args, **kwargs)
 
         self.actor = actor
-        # self.trainer = rl.Trainer(self.actor,
-        #                           buffer_size=5 * 1000, batch_size=32,
-        #                           gamma=0.95, tau=0.005,
-        #                           optimizer=tf.optimizers.Adam(learning_rate=1e-5)
-        # )
 
         self._next_load: Tuple[tf.Tensor, tf.Tensor] = next(self.load)
         self._next_production: Tuple[tf.Tensor, tf.Tensor] = self.pv.production
@@ -279,17 +251,10 @@ class RLAgent(ActingAgent):
     def save_to_file(self, setting: str, implementation: str) -> None:
         self.actor.save_to_file(f'{re.sub("-", "_", setting)}_{self.id}', implementation)
 
-    def _predict(self) -> List:
-        pass
-
-    def _communicate(self) -> List:
-        pass
-
 
 class QAgent(RLAgent):
 
     def __init__(self, *args, **kwargs):
-        self._state_quantum = 0.1
         self._num_time_states = 20
         self._num_temp_states = 20
         self._num_balance_states = 20

@@ -10,16 +10,14 @@ import pandas as pd
 from datetime import datetime
 
 # Local modules
-import config
-from config import DATA_PATH, DB_FILE, TIME_SLOT, MINUTES_PER_HOUR
-import access_smarthor_data_api as api
+import config as cf
 
 
-def get_connection(file=DB_FILE) -> sqlite3.Connection:
+def get_connection(file=cf.DB_FILE) -> sqlite3.Connection:
 
     conn = None
     try:
-        conn = sqlite3.connect(osp.join(DATA_PATH, file))
+        conn = sqlite3.connect(osp.join(cf.DATA_PATH, file))
         return conn
     except Exception as e:
         print(e)
@@ -363,7 +361,7 @@ if __name__ == '__main__':
             """
 
             df = pd.read_sql_query(query, conn)
-            print(list(df.loc[:,'settings']))
+            print(list(df.loc[:, 'settings']))
 
             # cursor.execute(query)
             # conn.commit()

@@ -9,14 +9,9 @@ import numpy as np
 
 
 # Local modules
-import config as cf
-from config import TIME_SLOT, MINUTES_PER_HOUR
+import setup
 import database as db
-from database import get_connection
 
-
-# Get a connection to the database
-conn = get_connection(cf.DB_PATH)
 
 # Define data splits
 data_month = 10
@@ -39,7 +34,7 @@ cols = env_cols + agent_cols + load_cols
 def compute_time_slot(time: str) -> int:
     t = datetime.strptime(time, '%H:%M:%S')
 
-    return (t.minute / TIME_SLOT) + t.hour * MINUTES_PER_HOUR / TIME_SLOT
+    return (t.minute / setup.TIME_SLOT) + t.hour * setup.MINUTES_PER_HOUR / setup.TIME_SLOT
 
 
 def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,7 +103,10 @@ def dataframe_to_dataset(df: pd.DataFrame, roll_len: int = -1, axis: int = 0) ->
     return ds
 
 
+### Run ###
 if __name__ == '__main__':
+    # Get a connection to the database
+
     env_df, agent_dfs = get_validation_data()
 
     print(env_df.head())
