@@ -9,6 +9,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 from scipy import stats
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.colors as mc  # For the legend
 from matplotlib.cm import ScalarMappable    # For the legend
@@ -26,23 +27,23 @@ import dataset as ds
 np.random.seed(setup.seed)
 
 # Text document settings
-primary_color = '#000'
-secondary_color = '#ccc'
-neutral_color = '#777'
-base_color = '#000'
+# primary_color = '#000'
+# secondary_color = '#ccc'
+# neutral_color = '#777'
+# base_color = '#000'
 
 title_fontsize = 9
 axis_label_fontsize = 8
 axis_ticks_fontsize = 6
 
 # Poster settings
-# secondary_color = '#51bcebff'
-# tertiary_color = '#1d8dafff'
-# neutral_color = '#777'
-# base_color = '#2f4d5dff'
+primary_color = '#004079ff'
+secondary_color = '#51bcebff'
+tertiary_color = '#1d8dafff'
+neutral_color = '#777'
+base_color = '#2f4d5dff'
 # title_fontsize = 16
 # axis_label_fontsize = 12
-# primary_color = '#004079ff'
 # Figure sizes should approximately be doubled
 
 figure_format = 'eps'
@@ -445,11 +446,11 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
     ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
     ax[0].plot(time, net_power, color=primary_color)
 
-    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left')
+    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left', color=base_color)
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
     ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                 bbox_to_anchor=(1.02, 1.02), loc="upper left")
+                 bbox_to_anchor=(1.02, -.125), loc="lower left")
 
     # Prices
     ax12 = ax[1].twinx()
@@ -458,7 +459,7 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
     ax12.plot(time, p2p_price, '--', color=secondary_color)
     ax[1].plot(time, timeslot_info.loc[:, ('cost', 0)], color=primary_color)
 
-    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
+    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1, color=base_color)
     ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
     ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
     ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
@@ -466,17 +467,17 @@ def make_baseline_day_plot(df: pd.DataFrame, baseline: str, save_fig: bool = Fal
     ax[1].set_frame_on(False)
     ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
     ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                bbox_to_anchor=(1.15, 1), loc="upper left")
+                bbox_to_anchor=(1.15, -.125), loc="lower left")
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
-    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001)
+    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001, color=base_color)
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
     ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize, loc='top')
 
     # Temperature
     ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
-    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
+    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1, color=base_color)
     ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
     ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
@@ -529,11 +530,11 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
     ax[0].plot(time, timeslot_info.loc[:, ('pv', 0)], ':', color=secondary_color)
     ax[0].plot(time, net_power, color=primary_color)
 
-    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left')
+    ax[0].set_title("a)", fontsize=axis_label_fontsize, loc='left', color=base_color)
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
     ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                 bbox_to_anchor=(1.02, 1.02), loc="upper left")
+                 bbox_to_anchor=(1.02, -.125), loc="lower left")
 
     # Prices
     ax12 = ax[1].twinx()
@@ -542,7 +543,7 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
     ax12.plot(time, injection_price, ':', color=secondary_color)
     ax12.plot(time, p2p_price, '--', color=secondary_color)
 
-    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
+    ax[1].set_title("b)", fontsize=axis_label_fontsize, loc='left', pad=-.1, color=base_color)
     ax[1].set_yticks([-.1, 0, .1], [-0.1, 0.0, 0.1], fontsize=axis_ticks_fontsize)
     ax12.set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], color=secondary_color, fontsize=axis_ticks_fontsize)
     ax[1].set_zorder(1)
@@ -550,17 +551,17 @@ def make_day_plot(df: pd.DataFrame, homogeneous: bool = False, save_fig: bool = 
     ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
     ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
     ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                bbox_to_anchor=(1.15, 1), loc="upper left")
+                bbox_to_anchor=(1.15, -.125), loc="lower left")
 
     # Heat pump
     ax[2].bar(time, timeslot_info.loc[:, ('heatpump', 0)], width=1.0, color=primary_color)
-    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001)
+    ax[2].set_title("c)", fontsize=axis_label_fontsize, loc='left', pad=-.001, color=base_color)
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
     ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize, loc='top')
 
     # Temperature
     ax[3].plot(time, timeslot_info.loc[:, ('temperature', 0)], color=primary_color)
-    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1)
+    ax[3].set_title("d)", fontsize=axis_label_fontsize, loc='left', pad=-.1, color=base_color)
     ax[3].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[3].set_ylabel("Temperature [°C]", color=base_color, fontsize=axis_label_fontsize)
     ax[3].set_xticks([i for i in range(96 + 1) if i % 4 == 0],
@@ -614,25 +615,27 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
                color=secondary_color)
     ax[0].plot(time, timeslot_info.loc[:, ('pv', f'2-multi-agent-com-rounds-1-{setting}', 0)], '--',
                color=primary_color)
+    ax[0].plot(time, timeslot_info.loc[:, ('pv', f'2-multi-agent-com-rounds-1-{setting}', 1)], '--',
+               color=secondary_color)
     ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
     ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
-    ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV"], labelcolor=base_color,
-                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
+    ax[0].legend(["Base Load Agent 0", "Base Load Agent 1", "PV Agent 0", "PV Agent 1"], labelcolor=base_color,
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, -.3), loc="lower left")
 
     # Prices
     ax[1].plot(time, grid_price, color=primary_color)
     ax[1].plot(time, injection_price, color=secondary_color)
     ax[1].plot(time, p2p_price, '--', color=primary_color)
     ax[1].set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
-    ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
+    ax[1].set_ylabel("Price [€/kWh]", color=base_color, fontsize=axis_label_fontsize)
     ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                 bbox_to_anchor=(1.02, 0.), loc="lower left")
+                 bbox_to_anchor=(1.02, -0.15), loc="lower left")
 
     # Heat pump
     width = 0.4
 
     # Agent 0
-    ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
     ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 0)],
               label='Communication', width=width, color=primary_color)
     ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 0)],
@@ -640,10 +643,10 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
     ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
     ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
     ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
-                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, .2), loc="upper left")
 
     # Agent 1
-    ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
     ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 1)],
               label='Communication', width=width, color=primary_color)
     ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 1)],
@@ -653,7 +656,7 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
 
     # Temperature
     # Agent 0
-    ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+    ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
     ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 0)],
                color=primary_color)
     ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 0)],
@@ -661,10 +664,10 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
     ax[4].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
     ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
-                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
+                 fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, .2), loc="upper left")
 
     # Agent 1
-    ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+    ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3, color=base_color)
     ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 1)],
                color=primary_color)
     ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 1)],
@@ -677,6 +680,15 @@ def make_decisions_comparison_plot(df: pd.DataFrame, homogeneous: bool = False, 
     ax[5].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
     ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
     ax[5].xaxis.set_minor_locator(MultipleLocator(1))
+
+    # Additional coloring
+    for i in range(len(ax)):
+        ax[i].spines['bottom'].set_color(base_color)
+        ax[i].spines['top'].set_color(base_color)
+        ax[i].spines['right'].set_color(base_color)
+        ax[i].spines['left'].set_color(base_color)
+        ax[i].tick_params(axis='x', colors=base_color)
+        ax[i].tick_params(axis='y', colors=base_color)
 
     if save_fig:
         plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot_{setting}.{figure_format}', format=figure_format)
@@ -920,7 +932,7 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
         width = 0.4
 
         # agent 0
-        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 0)],
                   label='Communication', width=width, color=primary_color)
         ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 0)],
@@ -931,7 +943,7 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
                      fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
 
         # agent 1
-        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-com-rounds-1-{setting}', 1)],
                   label='Communication', width=width, color=primary_color)
         ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', f'2-multi-agent-no-com-{setting}', 1)],
@@ -941,7 +953,7 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
 
         # Temperature
         # Agent 0
-        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 0)],
                    color=primary_color)
         ax[4].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 0)],
@@ -952,7 +964,7 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
                      fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
 
         # Agent 1
-        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3, color=base_color)
         ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-com-rounds-1-{setting}', 1)],
                    color=primary_color)
         ax[5].plot(time, timeslot_info.loc[:, ('temperature', f'2-multi-agent-no-com-{setting}', 1)],
@@ -965,7 +977,14 @@ def compare_decisions(homogeneous: bool = False, save_fig: bool = False) -> None
         ax[5].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
         ax[5].xaxis.set_minor_locator(MultipleLocator(1))
 
-        # fig.tight_layout()
+        # Additional coloring
+        for i in range(len(ax)):
+            ax[i].spines['bottom'].set_color(base_color)
+            ax[i].spines['top'].set_color(base_color)
+            ax[i].spines['right'].set_color(base_color)
+            ax[i].spines['left'].set_color(base_color)
+            ax[i].tick_params(axis='x', colors=base_color)
+            ax[i].tick_params(axis='y', colors=base_color)
 
         if save_fig:
             plt.savefig(f'{cf.FIGURES_PATH}/decisions_plot_{setting}.{figure_format}', format=figure_format)
@@ -1018,7 +1037,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[0].set_yticks([-4, 0, 4], [-4.0, 0.0, 4.0], fontsize=axis_ticks_fontsize)
         ax[0].set_ylabel("Power [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[0].legend(["Base Load", "PV", "Net Consumption"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                     bbox_to_anchor=(1.02, 1.02), loc="upper left")
+                     bbox_to_anchor=(1.02, -.125), loc="lower left")
 
         # Prices
         ax12 = ax[1].twinx()
@@ -1033,7 +1052,7 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[1].set_ylabel("Cost [€]", color=primary_color, fontsize=axis_label_fontsize)
         ax12.set_ylabel("Price [€/kWh]", color=secondary_color, fontsize=axis_label_fontsize)
         ax12.legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
-                    bbox_to_anchor=(1.15, 1.1), loc="upper left")
+                    bbox_to_anchor=(1.15, -.125), loc="lower left")
 
         # Heat pump
         width = 0.2
@@ -1059,6 +1078,15 @@ def compare_decisions_rounds(save_fig: bool = False) -> None:
         ax[2].xaxis.set_minor_locator(MultipleLocator(1))
         ax[3].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
         ax[3].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
+
+        # Additional coloring
+        for i in range(len(ax)):
+            ax[i].spines['bottom'].set_color(base_color)
+            ax[i].spines['top'].set_color(base_color)
+            ax[i].spines['right'].set_color(base_color)
+            ax[i].spines['left'].set_color(base_color)
+            ax[i].tick_params(axis='x', colors=base_color)
+            ax[i].tick_params(axis='y', colors=base_color)
 
         if save_fig:
             plt.savefig(f'{cf.FIGURES_PATH}/rounds_day_plot.{figure_format}', format=figure_format)
@@ -1111,7 +1139,7 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         ax[1].plot(time, injection_price, color=secondary_color)
         ax[1].plot(time, p2p_price, '--', color=primary_color)
         ax[1].set_yticks([0.07, 0.12, 0.17], [0.07, 0.12, 0.17], fontsize=axis_ticks_fontsize)
-        ax[1].set_ylabel("Price [€]", color=base_color, fontsize=axis_label_fontsize)
+        ax[1].set_ylabel("Price [€/kWh]", color=base_color, fontsize=axis_label_fontsize)
         ax[1].legend(["Offtake", "Injection", "P2P"], labelcolor=base_color, fontsize=axis_label_fontsize,
                      bbox_to_anchor=(1.02, -0.15), loc="lower left")
 
@@ -1119,7 +1147,7 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         width = 0.4
 
         # Agent 0
-        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[2].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[2].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-com', 0)],
                   label='Communication', width=width, color=primary_color)
         ax[2].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-no-com', 0)],
@@ -1127,10 +1155,10 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         ax[2].set_yticks([0, 1.5, 3], [0.0, 1.5, 3.0], fontsize=axis_ticks_fontsize)
         ax[2].set_ylabel("HP [kW]", color=base_color, fontsize=axis_label_fontsize)
         ax[2].legend(["Communication", "No communication"], labelcolor=base_color,
-                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0.), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, .2), loc="upper left")
 
         # Agent 1
-        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[3].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[3].bar(time - width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-com', 1)],
                   label='Communication', width=width, color=primary_color)
         ax[3].bar(time + width / 2, timeslot_info.loc[:, ('heatpump', '2-agent-1-pv-drop-no-com', 1)],
@@ -1140,7 +1168,7 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
 
         # Temperature
         # Agent 0
-        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1)
+        ax[4].set_title("agent 0", fontsize=axis_label_fontsize, loc='right', pad=-.1, color=base_color)
         ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-com', 0)],
                    color=primary_color)
         ax[4].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-no-com', 0)],
@@ -1148,10 +1176,10 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         ax[4].set_yticks([20, 22], [20, 22], fontsize=axis_ticks_fontsize)
         ax[4].hlines(y=[20, 22], xmin=0, xmax=96, color=neutral_color, linestyle='--', linewidths=0.8)
         ax[4].legend(["Communication", "No communication"], labelcolor=base_color,
-                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, 0), loc="lower left")
+                     fontsize=axis_label_fontsize, bbox_to_anchor=(1.02, .2), loc="upper left")
 
         # Agent 1
-        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3)
+        ax[5].set_title("agent 1", fontsize=axis_label_fontsize, loc='right', pad=-.3, color=base_color)
         ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-com', 1)],
                    color=primary_color)
         ax[5].plot(time, timeslot_info.loc[:, ('temperature', '2-agent-1-pv-drop-no-com', 1)],
@@ -1167,6 +1195,15 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         ax[5].set_xlabel("Time", color=base_color, fontsize=axis_label_fontsize)
         ax[5].xaxis.set_minor_locator(MultipleLocator(1))
 
+        # Additional coloring
+        for i in range(len(ax)):
+            ax[i].spines['bottom'].set_color(base_color)
+            ax[i].spines['top'].set_color(base_color)
+            ax[i].spines['right'].set_color(base_color)
+            ax[i].spines['left'].set_color(base_color)
+            ax[i].tick_params(axis='x', colors=base_color)
+            ax[i].tick_params(axis='y', colors=base_color)
+
         if save_fig:
             plt.savefig(f'{cf.FIGURES_PATH}/artificial_pv_decisions_plot.{figure_format}', format=figure_format)
 
@@ -1174,31 +1211,90 @@ def compare_decisions_artificial(save_fig: bool = False) -> None:
         con.close()
 
 
-def compare_q_values() -> None:
-    q_table = np.load(f'../models_tabular/2_multi_agent_com_rounds_3_hetero_0.npy')
-    # q_table = np.load(f'../models_tabular/single_agent_0.npy')
-    q_table /= np.abs(q_table).max()
+def plot_q_values_com(q_table: np.ndarray, save_figs: bool = False) -> None:
+    q_table = q_table / np.abs(q_table).max() #- q_table.mean()
+    normalizer = matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1)
 
-    for i in range(20):
-        fig, ax = plt.subplots(1, 20, figsize=(13, 4), sharey=True)
-        fig.suptitle("Time", fontsize=13)
-        ax[0].set_yticks(list(range(20)))
-        ax[0].set_ylabel("Temperature")
+    time_steps = int(q_table.shape[0])
+    balance_steps = int(q_table.shape[2])
+    p2p_steps = int(q_table.shape[3])
 
-        for t in range(20):
-            # fig.suptitle(f't={t}')
-            # im = ax[t].imshow(q_table[t, :, 0, :] - q_table.mean(), cmap='seismic',
-            #                      norm=matplotlib.colors.SymLogNorm(10**-4, vmin=-1, vmax=1))
-            im = ax[t].imshow(q_table[t, :, 8, i, :] - q_table.mean(), cmap='seismic',
-                              norm=matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1))
-            if t == 10:
-                ax[t].set_xlabel("Action")
-            # ax.set_yscale('symlog', linthresh=0.02)
-            ax[t].set_xticks(list(range(3)))
+    action_ticks = list(range(3))
+    temperature_ticks = [0, 5, 10, 15, 19]
 
-        fig.subplots_adjust(right=0.8)
-        cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])
+    for p in range(p2p_steps):
+
+        fig, ax = plt.subplots(balance_steps, time_steps, figsize=(6.5, 11), sharex=True, sharey=True)
+        fig.suptitle(f"Communication Q-table (P2P power index {p})", fontsize=title_fontsize)
+        fig.subplots_adjust(wspace=0., hspace=.1, left=.06, right=.9, top=.95, bottom=.05)
+        cbar_ax = fig.add_axes([0.93, 0.3, 0.01, 0.4])
+        cbar_ax.tick_params(labelsize=axis_ticks_fontsize)
+
+        for b in tqdm(range(balance_steps)):
+            ax[b, 0].set_yticks(temperature_ticks, temperature_ticks, fontsize=axis_ticks_fontsize)
+            ax[b, time_steps - 1].text(.905, .925 - b * .0455, f"b={b}", fontsize=axis_ticks_fontsize, rotation=-90,
+                                       transform=fig.transFigure)
+
+            for t in range(time_steps):
+                if b == 0:
+                    ax[b, t].set_title(f"t={t}", fontsize=axis_ticks_fontsize)
+                elif b == balance_steps - 1:
+                    ax[b, t].set_xticks(action_ticks, action_ticks, fontsize=axis_ticks_fontsize)
+
+                im = ax[b, t].imshow(q_table[t, :, p, b, :], cmap='seismic', norm=normalizer, aspect=.3)
+
         fig.colorbar(im, cax=cbar_ax)
+        ax[balance_steps - 1, time_steps // 2].set_xlabel("Action index", fontsize=axis_label_fontsize)
+        ax[balance_steps // 2, 0].set_ylabel("Temperature index", fontsize=axis_label_fontsize)
+
+        if save_figs:
+            fig.savefig(f'{cf.FIGURES_PATH}/q_table_com_plot_{p}.{figure_format}', format=figure_format)
+            plt.close(fig)
+
+
+def plot_q_values_no_com(q_table: np.ndarray, save_fig: bool = False) -> None:
+    q_table = q_table / np.abs(q_table).max() #- q_table.mean()
+    normalizer = matplotlib.colors.SymLogNorm(10 ** -4, vmin=-1, vmax=1)
+
+    time_steps = int(q_table.shape[0])
+    balance_steps = int(q_table.shape[2])
+
+    action_ticks = list(range(3))
+    temperature_ticks = [0, 5, 10, 15, 19]
+
+    fig, ax = plt.subplots(balance_steps, time_steps, figsize=(6.5, 11), sharex=True, sharey=True)
+    fig.suptitle(f"No communication Q-table", fontsize=title_fontsize)
+    fig.subplots_adjust(wspace=0., hspace=.1, left=.06, right=.9, top=.95, bottom=.05)
+    cbar_ax = fig.add_axes([0.93, 0.3, 0.01, 0.4])
+    cbar_ax.tick_params(labelsize=axis_ticks_fontsize)
+
+    for b in tqdm(range(balance_steps)):
+        ax[b, 0].set_yticks(temperature_ticks, temperature_ticks, fontsize=axis_ticks_fontsize)
+        ax[b, time_steps - 1].text(.905, .925 - b * .0455, f"b={b}", fontsize=axis_ticks_fontsize, rotation=-90,
+                                   transform=fig.transFigure)
+
+        for t in range(time_steps):
+            if b == 0:
+                ax[b, t].set_title(f't={t}', fontsize=axis_ticks_fontsize)
+            elif b == balance_steps - 1:
+                ax[b, t].set_xticks(action_ticks, action_ticks, fontsize=axis_ticks_fontsize)
+
+            im = ax[b, t].imshow(q_table[t, :, b, :], cmap='seismic', norm=normalizer, aspect=.3)
+
+    fig.colorbar(im, cax=cbar_ax)
+    ax[balance_steps - 1, time_steps // 2].set_xlabel("Action index", fontsize=axis_label_fontsize)
+    ax[balance_steps // 2, 0].set_ylabel("Temperature index", fontsize=axis_label_fontsize)
+
+    if save_fig:
+        fig.savefig(f'{cf.FIGURES_PATH}/q_table_no_com_plot.{figure_format}', format=figure_format)
+
+
+def compare_q_values(save_figs: bool = False) -> None:
+    q_table_com = np.load(f'../models_tabular/2_multi_agent_com_rounds_1_hetero_0.npy')
+    q_table_no_com = np.load(f'../models_tabular/single_agent_0.npy')
+
+    plot_q_values_com(q_table_com, save_figs=save_figs)
+    plot_q_values_no_com(q_table_no_com, save_fig=save_figs)
 
 
 def statistics_baselines(df: pd.DataFrame) -> None:
@@ -1542,8 +1638,8 @@ if __name__ == "__main__":
     plot_tabular_comparison(save_figs=save_figures)
     compare_decisions_rounds(save_fig=save_figures)
     compare_decisions_artificial(save_fig=save_figures)
-    # compare_q_values()
 
-    ddpg_resuls(save_figs=save_figures)
+    # compare_q_values(save_figs=save_figures)      # Warning: Takes a very long time!
+    # ddpg_resuls(save_figs=save_figures)
 
     plt.show()
