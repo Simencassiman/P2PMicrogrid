@@ -2,5 +2,6 @@
 .idea
 **/__pycache__
 data
-models_ddpg
+models_*/*
 **/*.json
+figures/*
